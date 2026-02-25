@@ -379,6 +379,71 @@ export default function ChatPage() {
     }
   }
 
+  async function refreshFromSession() {
+    if (status === "streaming") return;
+    try {
+      const res = await fetch("/api/chat/latest");
+      if (!res.ok) return;
+      const data = await res.json();
+
+      if (!data.userMessage || data.responses.length === 0) return;
+
+      const combined = data.responses.join("\n\n---\n\n");
+      const convId = activeId;
+
+      if (convId) {
+        // Update existing conversation — find last assistant message
+        setConversations((prev) =>
+          prev.map((c) => {
+            if (c.id !== convId) return c;
+            const msgs = [...c.messages];
+            // Find the last assistant message
+            for (let i = msgs.length - 1; i >= 0; i--) {
+              if (msgs[i].role === "assistant") {
+                // Only update if session has more content
+                if (combined.length > msgs[i].content.length) {
+                  msgs[i] = { ...msgs[i], content: combined };
+                }
+                break;
+              }
+            }
+            return { ...c, messages: msgs };
+          })
+        );
+        fullTextRef.current = combined;
+      } else {
+        // No active conversation — create one from session data
+        const conv: Conversation = {
+          id: crypto.randomUUID(),
+          title: data.userMessage.slice(0, 40),
+          messages: [
+            {
+              id: crypto.randomUUID(),
+              role: "user",
+              content: data.userMessage,
+              timestamp: new Date(),
+            },
+            {
+              id: crypto.randomUUID(),
+              role: "assistant",
+              content: combined,
+              timestamp: new Date(),
+            },
+          ],
+          createdAt: new Date(),
+        };
+        setConversations((prev) => [conv, ...prev]);
+        setActiveId(conv.id);
+        fullTextRef.current = combined;
+      }
+
+      stopPolling();
+      setStatus("idle");
+    } catch {
+      // silently fail
+    }
+  }
+
   function clearConversation() {
     if (abortRef.current) abortRef.current.abort();
     stopPolling();
@@ -465,12 +530,22 @@ export default function ChatPage() {
               </div>
             </div>
           </div>
-          <button
-            onClick={clearConversation}
-            className="text-xs px-3 py-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
-          >
-            Clear conversation
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={refreshFromSession}
+              disabled={status === "streaming"}
+              title="Pull latest responses from session"
+              className="text-xs px-3 py-1.5 text-gray-400 hover:text-white hover:bg-gray-800 disabled:opacity-50 rounded-lg transition-colors"
+            >
+              Refresh
+            </button>
+            <button
+              onClick={clearConversation}
+              className="text-xs px-3 py-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+            >
+              Clear
+            </button>
+          </div>
         </div>
 
         {/* Messages */}
