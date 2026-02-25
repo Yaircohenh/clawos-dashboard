@@ -17,7 +17,7 @@ interface Conversation {
   createdAt: Date;
 }
 
-type ConnectionStatus = "idle" | "streaming" | "error";
+type ConnectionStatus = "idle" | "streaming" | "waiting" | "error";
 
 const STORAGE_KEY = "clawos-chat-conversations";
 const MAX_CONVERSATIONS = 50;
@@ -133,7 +133,7 @@ export default function ChatPage() {
 
   async function sendMessage() {
     const text = input.trim();
-    if (!text || status === "streaming") return;
+    if (!text || status === "streaming" || status === "waiting") return;
 
     // Ensure we have an active conversation
     let convId = activeId;
@@ -213,6 +213,8 @@ export default function ChatPage() {
             } else if (data.type === "error") {
               fullTextRef.current += `\n\n*Error: ${data.text}*`;
               updateAssistantMsg(convId!, assistantMsg.id, fullTextRef.current);
+            } else if (data.type === "waiting") {
+              setStatus("waiting");
             }
           } catch { /* skip unparseable lines */ }
         }
@@ -317,8 +319,8 @@ export default function ChatPage() {
             <div>
               <h1 className="font-semibold">Chat with Tom</h1>
               <div className="flex items-center gap-2 text-xs text-gray-400">
-                <span className={`w-2 h-2 rounded-full ${status === "streaming" ? "bg-blue-400 animate-pulse" : status === "error" ? "bg-red-400" : "bg-green-400"}`} />
-                {status === "streaming" ? "Tom is thinking..." : status === "error" ? "Connection error" : "Ready"}
+                <span className={`w-2 h-2 rounded-full ${status === "streaming" ? "bg-blue-400 animate-pulse" : status === "waiting" ? "bg-yellow-400 animate-pulse" : status === "error" ? "bg-red-400" : "bg-green-400"}`} />
+                {status === "streaming" ? "Tom is thinking..." : status === "waiting" ? "Agents working..." : status === "error" ? "Connection error" : "Ready"}
               </div>
             </div>
           </div>
@@ -378,7 +380,7 @@ export default function ChatPage() {
               className="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-none max-h-32"
               style={{ minHeight: "48px" }}
             />
-            <button onClick={sendMessage} disabled={!input.trim() || status === "streaming"} className="px-5 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl font-medium transition-colors whitespace-nowrap">
+            <button onClick={sendMessage} disabled={!input.trim() || status === "streaming" || status === "waiting"} className="px-5 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl font-medium transition-colors whitespace-nowrap">
               Send
             </button>
           </div>
