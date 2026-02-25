@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 
 interface Message {
@@ -78,6 +78,7 @@ export default function ChatPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   // Ref-based accumulator so rapid SSE chunks don't lose data through React batching
   const fullTextRef = useRef("");
 
@@ -85,6 +86,13 @@ export default function ChatPage() {
   const messages = activeConversation?.messages || [];
   const pastConversations = conversations.filter((c) => c.id !== activeId);
   const visiblePast = showAllChats ? pastConversations : pastConversations.slice(0, 5);
+
+  // Clean up polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
 
   // Hydrate from localStorage on mount
   useEffect(() => {
@@ -111,8 +119,85 @@ export default function ChatPage() {
     inputRef.current?.focus();
   }, [activeId]);
 
+  const updateAssistantMsg = useCallback(
+    (convId: string, msgId: string, content: string) => {
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (c.id !== convId) return c;
+          return {
+            ...c,
+            messages: c.messages.map((m) =>
+              m.id === msgId ? { ...m, content } : m
+            ),
+          };
+        })
+      );
+    },
+    []
+  );
+
+  function stopPolling() {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }
+
+  /** Poll /api/chat/follow-ups for subagent responses */
+  function startFollowUpPolling(
+    convId: string,
+    msgId: string,
+    baseline: number
+  ) {
+    stopPolling();
+    setStatus("waiting");
+
+    let currentBaseline = baseline;
+    let lastActivity = Date.now();
+    const startTime = Date.now();
+    const MAX_TOTAL_MS = 90_000;
+    const IDLE_TIMEOUT_MS = 30_000;
+    let separatorAdded = false;
+
+    pollRef.current = setInterval(async () => {
+      // Check timeouts
+      if (Date.now() - startTime > MAX_TOTAL_MS || Date.now() - lastActivity > IDLE_TIMEOUT_MS) {
+        stopPolling();
+        setStatus("idle");
+        return;
+      }
+
+      try {
+        const res = await fetch(
+          `/api/chat/follow-ups?baseline=${currentBaseline}`
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+
+        if (data.messages && data.messages.length > 0) {
+          if (!separatorAdded) {
+            fullTextRef.current += "\n\n---\n\n";
+            separatorAdded = true;
+          }
+          for (const msg of data.messages) {
+            fullTextRef.current += msg + "\n\n";
+          }
+          updateAssistantMsg(convId, msgId, fullTextRef.current);
+          lastActivity = Date.now();
+        }
+
+        if (data.lineCount) {
+          currentBaseline = data.lineCount;
+        }
+      } catch {
+        // Network error — keep trying until timeout
+      }
+    }, 3000);
+  }
+
   function newChat() {
     if (abortRef.current) abortRef.current.abort();
+    stopPolling();
     const conv: Conversation = {
       id: crypto.randomUUID(),
       title: "New conversation",
@@ -126,14 +211,15 @@ export default function ChatPage() {
   }
 
   function switchChat(id: string) {
-    // Don't abort — let background stream complete
     setActiveId(id);
-    setStatus("idle");
+    // Don't change status or stop polling — let follow-ups continue in background
   }
 
   async function sendMessage() {
     const text = input.trim();
     if (!text || status === "streaming" || status === "waiting") return;
+
+    stopPolling();
 
     // Ensure we have an active conversation
     let convId = activeId;
@@ -149,14 +235,28 @@ export default function ChatPage() {
       setActiveId(convId);
     }
 
-    const userMsg: Message = { id: crypto.randomUUID(), role: "user", content: text, timestamp: new Date() };
-    const assistantMsg: Message = { id: crypto.randomUUID(), role: "assistant", content: "", timestamp: new Date() };
+    const userMsg: Message = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: text,
+      timestamp: new Date(),
+    };
+    const assistantMsg: Message = {
+      id: crypto.randomUUID(),
+      role: "assistant",
+      content: "",
+      timestamp: new Date(),
+    };
 
     setConversations((prev) =>
       prev.map((c) => {
         if (c.id !== convId) return c;
         const title = c.messages.length === 0 ? text.slice(0, 40) : c.title;
-        return { ...c, title, messages: [...c.messages, userMsg, assistantMsg] };
+        return {
+          ...c,
+          title,
+          messages: [...c.messages, userMsg, assistantMsg],
+        };
       })
     );
     setInput("");
@@ -179,8 +279,9 @@ export default function ChatPage() {
       if (!reader) throw new Error("No response body");
 
       const decoder = new TextDecoder();
-      // Buffer for incomplete SSE lines split across chunks
       let sseBuffer = "";
+      let spawned = false;
+      let baseline = 0;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -188,9 +289,7 @@ export default function ChatPage() {
         const raw = decoder.decode(value, { stream: true });
         sseBuffer += raw;
 
-        // Process complete lines only
         const lines = sseBuffer.split("\n");
-        // Keep the last (possibly incomplete) line in the buffer
         sseBuffer = lines.pop() || "";
 
         for (const line of lines) {
@@ -201,68 +300,88 @@ export default function ChatPage() {
               fullTextRef.current += data.text;
               updateAssistantMsg(convId!, assistantMsg.id, fullTextRef.current);
             } else if (data.type === "done") {
-              // Always prefer the full output from the done event
-              // This catches cases where chunks were missed or incomplete
               if (data.output) {
                 const finalText = data.output.trim();
-                if (finalText && finalText.length >= fullTextRef.current.length) {
+                if (
+                  finalText &&
+                  finalText.length >= fullTextRef.current.length
+                ) {
                   fullTextRef.current = finalText;
                 }
               }
               updateAssistantMsg(convId!, assistantMsg.id, fullTextRef.current);
+              spawned = !!data.spawned;
+              baseline = data.baseline || 0;
             } else if (data.type === "error") {
               fullTextRef.current += `\n\n*Error: ${data.text}*`;
               updateAssistantMsg(convId!, assistantMsg.id, fullTextRef.current);
-            } else if (data.type === "waiting") {
-              setStatus("waiting");
             }
-          } catch { /* skip unparseable lines */ }
+          } catch {
+            /* skip unparseable lines */
+          }
         }
       }
 
-      // Process any remaining buffer
+      // Process remaining buffer
       if (sseBuffer.startsWith("data: ")) {
         try {
           const data = JSON.parse(sseBuffer.slice(6));
           if (data.type === "chunk") {
             fullTextRef.current += data.text;
-          } else if (data.type === "done" && data.output) {
-            const finalText = data.output.trim();
-            if (finalText && finalText.length >= fullTextRef.current.length) {
-              fullTextRef.current = finalText;
+          } else if (data.type === "done") {
+            if (data.output) {
+              const finalText = data.output.trim();
+              if (
+                finalText &&
+                finalText.length >= fullTextRef.current.length
+              ) {
+                fullTextRef.current = finalText;
+              }
             }
+            spawned = !!data.spawned;
+            baseline = data.baseline || 0;
           }
           updateAssistantMsg(convId!, assistantMsg.id, fullTextRef.current);
-        } catch { /* skip */ }
+        } catch {
+          /* skip */
+        }
       }
 
       if (!fullTextRef.current) {
-        updateAssistantMsg(convId!, assistantMsg.id, "*No response. Is the gateway running?*");
+        updateAssistantMsg(
+          convId!,
+          assistantMsg.id,
+          "*No response. Is the gateway running?*"
+        );
       }
-      setStatus("idle");
+
+      // If subagents were spawned, start polling for their responses
+      if (spawned && baseline > 0) {
+        startFollowUpPolling(convId!, assistantMsg.id, baseline);
+      } else {
+        setStatus("idle");
+      }
     } catch (err: unknown) {
-      if (err instanceof Error && err.name === "AbortError") { setStatus("idle"); return; }
+      if (err instanceof Error && err.name === "AbortError") {
+        setStatus("idle");
+        return;
+      }
       setStatus("error");
-      updateAssistantMsg(convId!, assistantMsg.id,
+      updateAssistantMsg(
+        convId!,
+        assistantMsg.id,
         fullTextRef.current
-          ? fullTextRef.current + `\n\n*Connection closed: ${err instanceof Error ? err.message : "Unknown"}*`
+          ? fullTextRef.current +
+              `\n\n*Connection closed: ${err instanceof Error ? err.message : "Unknown"}*`
           : `*Connection error: ${err instanceof Error ? err.message : "Unknown"}*`
       );
       setTimeout(() => setStatus("idle"), 3000);
     }
   }
 
-  function updateAssistantMsg(convId: string, msgId: string, content: string) {
-    setConversations((prev) =>
-      prev.map((c) => {
-        if (c.id !== convId) return c;
-        return { ...c, messages: c.messages.map((m) => (m.id === msgId ? { ...m, content } : m)) };
-      })
-    );
-  }
-
   function clearConversation() {
     if (abortRef.current) abortRef.current.abort();
+    stopPolling();
     if (activeId) {
       setConversations((prev) => prev.filter((c) => c.id !== activeId));
     }
@@ -275,7 +394,10 @@ export default function ChatPage() {
       {/* Chat history sidebar */}
       <div className="w-64 bg-gray-900 border-r border-gray-800 flex flex-col shrink-0">
         <div className="p-3 border-b border-gray-800">
-          <button onClick={newChat} className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors">
+          <button
+            onClick={newChat}
+            className="w-full px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+          >
             + New Chat
           </button>
         </div>
@@ -301,7 +423,10 @@ export default function ChatPage() {
                 </button>
               ))}
               {pastConversations.length > 5 && !showAllChats && (
-                <button onClick={() => setShowAllChats(true)} className="w-full text-left px-3 py-1.5 text-xs text-blue-400 hover:text-blue-300">
+                <button
+                  onClick={() => setShowAllChats(true)}
+                  className="w-full text-left px-3 py-1.5 text-xs text-blue-400 hover:text-blue-300"
+                >
                   Show {pastConversations.length - 5} more...
                 </button>
               )}
@@ -319,12 +444,31 @@ export default function ChatPage() {
             <div>
               <h1 className="font-semibold">Chat with Tom</h1>
               <div className="flex items-center gap-2 text-xs text-gray-400">
-                <span className={`w-2 h-2 rounded-full ${status === "streaming" ? "bg-blue-400 animate-pulse" : status === "waiting" ? "bg-yellow-400 animate-pulse" : status === "error" ? "bg-red-400" : "bg-green-400"}`} />
-                {status === "streaming" ? "Tom is thinking..." : status === "waiting" ? "Agents working..." : status === "error" ? "Connection error" : "Ready"}
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    status === "streaming"
+                      ? "bg-blue-400 animate-pulse"
+                      : status === "waiting"
+                        ? "bg-yellow-400 animate-pulse"
+                        : status === "error"
+                          ? "bg-red-400"
+                          : "bg-green-400"
+                  }`}
+                />
+                {status === "streaming"
+                  ? "Tom is thinking..."
+                  : status === "waiting"
+                    ? "Agents working..."
+                    : status === "error"
+                      ? "Connection error"
+                      : "Ready"}
               </div>
             </div>
           </div>
-          <button onClick={clearConversation} className="text-xs px-3 py-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors">
+          <button
+            onClick={clearConversation}
+            className="text-xs px-3 py-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+          >
             Clear conversation
           </button>
         </div>
@@ -335,22 +479,39 @@ export default function ChatPage() {
             <div className="flex items-center justify-center h-full">
               <div className="text-center text-gray-500">
                 <div className="text-5xl mb-4">🚀</div>
-                <h2 className="text-lg font-medium text-gray-300 mb-2">Chat with Tom</h2>
-                <p className="text-sm max-w-md">Tom is the master orchestrator. Ask him anything — he can delegate to specialist agents.</p>
+                <h2 className="text-lg font-medium text-gray-300 mb-2">
+                  Chat with Tom
+                </h2>
+                <p className="text-sm max-w-md">
+                  Tom is the master orchestrator. Ask him anything — he can
+                  delegate to specialist agents.
+                </p>
               </div>
             </div>
           )}
           {messages.map((msg) => (
-            <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[75%] ${msg.role === "user" ? "bg-blue-600 text-white rounded-2xl rounded-br-md px-4 py-3" : "bg-gray-800 text-gray-100 rounded-2xl rounded-bl-md px-4 py-3"}`}>
+            <div
+              key={msg.id}
+              className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+            >
+              <div
+                className={`max-w-[75%] ${
+                  msg.role === "user"
+                    ? "bg-blue-600 text-white rounded-2xl rounded-br-md px-4 py-3"
+                    : "bg-gray-800 text-gray-100 rounded-2xl rounded-bl-md px-4 py-3"
+                }`}
+              >
                 {msg.role === "assistant" && (
                   <div className="flex items-center gap-2 mb-2 text-xs text-gray-400">
-                    <span>🚀</span><span className="font-medium">Tom</span>
+                    <span>🚀</span>
+                    <span className="font-medium">Tom</span>
                   </div>
                 )}
                 <div className="text-sm prose prose-invert prose-sm max-w-none [&_p]:mb-2 [&_p:last-child]:mb-0 [&_pre]:bg-gray-900 [&_pre]:p-3 [&_pre]:rounded-lg [&_code]:text-blue-300">
                   {msg.role === "assistant" ? (
-                    msg.content ? <ReactMarkdown>{msg.content}</ReactMarkdown> : (
+                    msg.content ? (
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    ) : (
                       <span className="inline-flex gap-1">
                         <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:0ms]" />
                         <span className="w-2 h-2 bg-gray-500 rounded-full animate-bounce [animation-delay:150ms]" />
@@ -374,13 +535,26 @@ export default function ChatPage() {
               ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  sendMessage();
+                }
+              }}
               placeholder="Message Tom... (Enter to send, Shift+Enter for newline)"
               rows={1}
               className="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-none max-h-32"
               style={{ minHeight: "48px" }}
             />
-            <button onClick={sendMessage} disabled={!input.trim() || status === "streaming" || status === "waiting"} className="px-5 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl font-medium transition-colors whitespace-nowrap">
+            <button
+              onClick={sendMessage}
+              disabled={
+                !input.trim() ||
+                status === "streaming" ||
+                status === "waiting"
+              }
+              className="px-5 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl font-medium transition-colors whitespace-nowrap"
+            >
               Send
             </button>
           </div>

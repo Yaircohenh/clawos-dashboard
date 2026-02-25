@@ -33,7 +33,6 @@ function countFileLines(filePath: string): number {
   }
 }
 
-/** Check if any lines in [fromLine, toLine) contain sessions_spawn tool calls */
 function hasSpawnCallsInRange(
   filePath: string,
   fromLine: number,
@@ -47,47 +46,6 @@ function hasSpawnCallsInRange(
   } catch {
     return false;
   }
-}
-
-function extractAssistantTexts(
-  filePath: string,
-  afterLine: number
-): string[] {
-  try {
-    const content = readFileSync(filePath, "utf-8").trim();
-    if (!content) return [];
-    const allLines = content.split("\n");
-    if (allLines.length <= afterLine) return [];
-
-    const texts: string[] = [];
-    for (let i = afterLine; i < allLines.length; i++) {
-      try {
-        const entry = JSON.parse(allLines[i]);
-        if (entry.type === "message" && entry.message?.role === "assistant") {
-          const arr = Array.isArray(entry.message.content)
-            ? entry.message.content
-            : [];
-          const parts = arr
-            .filter(
-              (c: Record<string, unknown>) => c.type === "text" && c.text
-            )
-            .map((c: Record<string, unknown>) => c.text as string);
-          const text = parts.join("\n").trim();
-          // Skip empty and placeholder responses (Tom says "NO_REPLY" when deferring)
-          if (text && text !== "NO_REPLY") texts.push(text);
-        }
-      } catch {
-        /* skip unparseable lines */
-      }
-    }
-    return texts;
-  } catch {
-    return [];
-  }
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
 }
 
 export async function POST(request: NextRequest) {
@@ -122,7 +80,6 @@ export async function POST(request: NextRequest) {
   const stream = new ReadableStream({
     start(controller) {
       // Snapshot session line count BEFORE CLI starts
-      // so we can scope spawn detection to only this request's lines
       const preSessionFile = getLatestSessionFile("main");
       const preBaseline = preSessionFile ? countFileLines(preSessionFile) : 0;
 
@@ -156,112 +113,32 @@ export async function POST(request: NextRequest) {
       });
 
       proc.on("close", (code) => {
-        // Non-zero exit or client disconnected — close immediately
-        if (code !== 0 || request.signal.aborted) {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "done", code, output: output.trim() })}\n\n`
-            )
-          );
-          controller.close();
-          return;
-        }
-
-        // Check if Tom spawned subagents in THIS request (not previous ones)
+        // Check if Tom spawned subagents during THIS request
         const sessionFile = getLatestSessionFile("main");
-        if (!sessionFile) {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "done", code, output: output.trim() })}\n\n`
-            )
-          );
-          controller.close();
-          return;
+        let spawned = false;
+        let baseline = 0;
+
+        if (sessionFile && code === 0) {
+          const postBaseline = countFileLines(sessionFile);
+          if (hasSpawnCallsInRange(sessionFile, preBaseline, postBaseline)) {
+            spawned = true;
+            baseline = postBaseline;
+          }
         }
 
-        const postBaseline = countFileLines(sessionFile);
-
-        // Only check lines added during THIS CLI invocation for spawn calls
-        if (!hasSpawnCallsInRange(sessionFile, preBaseline, postBaseline)) {
-          // No subagents spawned — close immediately (fast path)
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "done", code, output: output.trim() })}\n\n`
-            )
-          );
-          controller.close();
-          return;
-        }
-
-        // Subagents were spawned — poll session file for follow-up responses
+        // Send done with spawn info — frontend uses this to start polling
         controller.enqueue(
           encoder.encode(
-            `data: ${JSON.stringify({ type: "waiting" })}\n\n`
+            `data: ${JSON.stringify({
+              type: "done",
+              code,
+              output: output.trim(),
+              spawned,
+              baseline,
+            })}\n\n`
           )
         );
-
-        (async () => {
-          try {
-            let sentCount = 0;
-            let lastActivity = Date.now();
-            const startTime = Date.now();
-            const MAX_TOTAL_MS = 90_000; // 90s max total poll time
-            const IDLE_TIMEOUT_MS = 30_000; // 30s with no new messages
-            const POLL_INTERVAL_MS = 2_000; // check every 2s
-            let separatorSent = false;
-
-            // Initial delay — let subagents start working
-            await sleep(3000);
-
-            while (!request.signal.aborted) {
-              const newTexts = extractAssistantTexts(
-                sessionFile,
-                postBaseline
-              );
-
-              if (newTexts.length > sentCount) {
-                // New follow-up responses arrived
-                if (!separatorSent) {
-                  const sep = "\n\n---\n\n";
-                  controller.enqueue(
-                    encoder.encode(
-                      `data: ${JSON.stringify({ type: "chunk", text: sep })}\n\n`
-                    )
-                  );
-                  output += sep;
-                  separatorSent = true;
-                }
-
-                for (let i = sentCount; i < newTexts.length; i++) {
-                  const chunk = newTexts[i] + "\n\n";
-                  controller.enqueue(
-                    encoder.encode(
-                      `data: ${JSON.stringify({ type: "chunk", text: chunk })}\n\n`
-                    )
-                  );
-                  output += chunk;
-                }
-                sentCount = newTexts.length;
-                lastActivity = Date.now();
-              }
-
-              // Check timeouts
-              if (Date.now() - startTime > MAX_TOTAL_MS) break;
-              if (Date.now() - lastActivity > IDLE_TIMEOUT_MS) break;
-
-              await sleep(POLL_INTERVAL_MS);
-            }
-          } catch {
-            // aborted or read error — close gracefully
-          }
-
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify({ type: "done", code: 0, output: output.trim() })}\n\n`
-            )
-          );
-          controller.close();
-        })();
+        controller.close();
       });
 
       proc.on("error", (err) => {
@@ -273,7 +150,6 @@ export async function POST(request: NextRequest) {
         controller.close();
       });
 
-      // Handle client disconnect
       request.signal.addEventListener("abort", () => {
         proc.kill("SIGTERM");
       });
