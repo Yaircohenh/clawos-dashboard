@@ -3,12 +3,29 @@
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 
+interface AgentTokenBreakdown {
+  agentId: string;
+  name: string;
+  emoji: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
 interface CostData {
   totalCost: number;
   totalTokens: number;
   raw: string;
   limits: { daily?: number };
+  agentBreakdown: AgentTokenBreakdown[];
 }
+
+const BILLING_LINKS = [
+  { provider: "Anthropic", url: "https://console.anthropic.com/settings/billing", color: "text-purple-400" },
+  { provider: "OpenAI", url: "https://platform.openai.com/account/billing", color: "text-green-400" },
+  { provider: "xAI", url: "https://console.x.ai/billing", color: "text-blue-400" },
+  { provider: "Google", url: "https://console.cloud.google.com/billing", color: "text-yellow-400" },
+];
 
 export default function CostsPage() {
   const [data, setData] = useState<CostData | null>(null);
@@ -103,10 +120,14 @@ export default function CostsPage() {
     );
   }
 
-  const cost = data || { totalCost: 0, totalTokens: 0, raw: "", limits: {} };
+  const cost = data || { totalCost: 0, totalTokens: 0, raw: "", limits: {}, agentBreakdown: [] };
   const providerCosts = parseProviderCosts(cost.raw);
   const dailyLimit = cost.limits?.daily;
   const usagePercent = dailyLimit && dailyLimit > 0 ? Math.min(100, (cost.totalCost / dailyLimit) * 100) : 0;
+  const agentBreakdown = cost.agentBreakdown || [];
+  const totalInput = agentBreakdown.reduce((sum, a) => sum + a.inputTokens, 0);
+  const totalOutput = agentBreakdown.reduce((sum, a) => sum + a.outputTokens, 0);
+  const totalAgentTokens = agentBreakdown.reduce((sum, a) => sum + a.totalTokens, 0);
 
   return (
     <div>
@@ -185,6 +206,49 @@ export default function CostsPage() {
         </div>
       )}
 
+      {/* Per-Agent Token Usage */}
+      <section className="bg-gray-900 rounded-xl border border-gray-800 p-5 mb-6">
+        <h2 className="text-lg font-semibold mb-4">Per-Agent Token Usage</h2>
+        {agentBreakdown.length > 0 ? (
+          <div className="overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-800 text-gray-400">
+                  <th className="text-left pb-3">Agent</th>
+                  <th className="text-right pb-3">Input Tokens</th>
+                  <th className="text-right pb-3">Output Tokens</th>
+                  <th className="text-right pb-3">Total Tokens</th>
+                </tr>
+              </thead>
+              <tbody>
+                {agentBreakdown.map((agent) => (
+                  <tr key={agent.agentId} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                    <td className="py-3">
+                      <span className="mr-2">{agent.emoji}</span>
+                      <span className="text-gray-200">{agent.name}</span>
+                      <span className="text-xs text-gray-500 ml-2">({agent.agentId})</span>
+                    </td>
+                    <td className="py-3 text-right font-mono text-gray-400">{agent.inputTokens.toLocaleString()}</td>
+                    <td className="py-3 text-right font-mono text-gray-400">{agent.outputTokens.toLocaleString()}</td>
+                    <td className="py-3 text-right font-mono">{agent.totalTokens.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-gray-700">
+                  <td className="pt-3 font-medium">Total</td>
+                  <td className="pt-3 text-right font-mono font-medium text-gray-400">{totalInput.toLocaleString()}</td>
+                  <td className="pt-3 text-right font-mono font-medium text-gray-400">{totalOutput.toLocaleString()}</td>
+                  <td className="pt-3 text-right font-mono font-medium">{totalAgentTokens.toLocaleString()}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        ) : (
+          <p className="text-gray-500 text-sm">No per-agent data available yet. Run some sessions to see breakdowns.</p>
+        )}
+      </section>
+
       {/* Cost Alerts */}
       <section className="bg-gray-900 rounded-xl border border-gray-800 p-5 mb-6">
         <h2 className="text-lg font-semibold mb-4">Cost Alerts</h2>
@@ -254,6 +318,26 @@ export default function CostsPage() {
         ) : (
           <p className="text-gray-500 text-sm">No provider data available yet.</p>
         )}
+      </section>
+
+      {/* Provider Balances */}
+      <section className="bg-gray-900 rounded-xl border border-gray-800 p-5 mb-6">
+        <h2 className="text-lg font-semibold mb-4">Provider Balances</h2>
+        <p className="text-xs text-gray-400 mb-3">Check your account balance and billing at each provider.</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {BILLING_LINKS.map((link) => (
+            <a
+              key={link.provider}
+              href={link.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-gray-800/50 hover:bg-gray-800 rounded-lg p-3 transition-colors text-center"
+            >
+              <div className={`text-sm font-medium ${link.color}`}>{link.provider}</div>
+              <div className="text-xs text-gray-500 mt-1">View billing →</div>
+            </a>
+          ))}
+        </div>
       </section>
 
       {/* Raw Output */}

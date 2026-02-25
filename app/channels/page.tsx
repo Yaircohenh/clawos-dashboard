@@ -16,9 +16,13 @@ export default function ChannelsPage() {
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [channelStatuses, setChannelStatuses] = useState<Record<string, boolean>>({});
+  const [channelHealth, setChannelHealth] = useState<Record<string, { connected: boolean; detail: string }>>({});
+  const [qrOutput, setQrOutput] = useState<string | null>(null);
+  const [qrLoading, setQrLoading] = useState(false);
 
   useEffect(() => {
     fetchTemplates();
+    checkHealth();
   }, []);
 
   async function fetchTemplates() {
@@ -33,6 +37,28 @@ export default function ChannelsPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function checkHealth() {
+    try {
+      const res = await fetch("/api/channels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "healthCheck" }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setChannelHealth(data.statuses || {});
+        // Also update configured status based on health
+        const statuses: Record<string, boolean> = {};
+        for (const [name, status] of Object.entries(data.statuses as Record<string, { connected: boolean }>)) {
+          statuses[name] = status.connected;
+        }
+        if (Object.keys(statuses).length > 0) {
+          setChannelStatuses(prev => ({ ...prev, ...statuses }));
+        }
+      }
+    } catch { /* silent */ }
   }
 
   async function saveChannel(type: string) {
@@ -74,6 +100,27 @@ export default function ChannelsPage() {
     }
   }
 
+  async function getWhatsAppQR() {
+    setQrLoading(true);
+    try {
+      const res = await fetch("/api/channels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "qr" }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setQrOutput(data.output);
+      } else {
+        toast.error("Failed to get QR code");
+      }
+    } catch {
+      toast.error("Failed");
+    } finally {
+      setQrLoading(false);
+    }
+  }
+
   const channelIcons: Record<string, string> = {
     whatsapp: "💬",
     telegram: "✈️",
@@ -102,6 +149,7 @@ export default function ChannelsPage() {
         {Object.entries(templates).map(([type, template]) => {
           const isConfigured = channelStatuses[type];
           const isActive = activeChannel === type;
+          const health = channelHealth[type];
 
           return (
             <div key={type} className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden hover:border-gray-700 transition-colors">
@@ -110,9 +158,16 @@ export default function ChannelsPage() {
                   <div className="flex items-center gap-3">
                     <span className="text-2xl">{channelIcons[type] || "📡"}</span>
                     <div>
-                      <h3 className="font-semibold">{template.name}</h3>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold">{template.name}</h3>
+                        {health ? (
+                          <span className={`w-2.5 h-2.5 rounded-full ${health.connected ? "bg-green-400" : "bg-red-400"}`} title={health.connected ? "Connected" : "Disconnected"} />
+                        ) : isConfigured ? (
+                          <span className="w-2.5 h-2.5 rounded-full bg-yellow-400" title="Configured (status unknown)" />
+                        ) : null}
+                      </div>
                       <span className={`text-xs ${isConfigured ? "text-green-400" : "text-gray-500"}`}>
-                        {isConfigured ? "Configured" : "Not configured"}
+                        {health ? (health.connected ? "Connected" : `Disconnected: ${health.detail}`) : isConfigured ? "Configured" : "Not configured"}
                       </span>
                     </div>
                   </div>
@@ -134,6 +189,7 @@ export default function ChannelsPage() {
                   onClick={() => {
                     setActiveChannel(isActive ? null : type);
                     setFormData({});
+                    setQrOutput(null);
                   }}
                   className="text-sm text-blue-400 hover:text-blue-300"
                 >
@@ -143,6 +199,24 @@ export default function ChannelsPage() {
 
               {isActive && (
                 <div className="border-t border-gray-800 p-5">
+                  {/* WhatsApp QR Button */}
+                  {type === "whatsapp" && (
+                    <div className="mb-4">
+                      <button
+                        onClick={getWhatsAppQR}
+                        disabled={qrLoading}
+                        className="px-3 py-2 bg-green-700 hover:bg-green-600 disabled:bg-gray-700 text-white rounded-lg text-sm mb-2"
+                      >
+                        {qrLoading ? "Loading..." : "Get QR Code"}
+                      </button>
+                      {qrOutput && (
+                        <pre className="text-xs text-gray-300 bg-gray-800 rounded-lg p-3 whitespace-pre-wrap font-mono overflow-x-auto">
+                          {qrOutput}
+                        </pre>
+                      )}
+                    </div>
+                  )}
+
                   {/* Instructions */}
                   <div className="bg-gray-800/50 rounded-lg p-3 mb-4">
                     <div className="text-xs font-medium text-gray-400 mb-2">Setup Instructions:</div>
@@ -151,18 +225,43 @@ export default function ChannelsPage() {
 
                   {/* Fields */}
                   <div className="space-y-3 mb-4">
-                    {template.fields.map(field => (
-                      <div key={field.key}>
-                        <label className="text-xs text-gray-500 mb-1 block">{field.label}</label>
-                        <input
-                          type={field.secret ? "password" : "text"}
-                          value={formData[field.key] || ""}
-                          onChange={e => setFormData(prev => ({ ...prev, [field.key]: e.target.value }))}
-                          placeholder={field.placeholder}
-                          className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500"
-                        />
-                      </div>
-                    ))}
+                    {template.fields.map(field => {
+                      // For Gmail auth method, show as dropdown
+                      if (type === "gmail" && field.key === "authMethod") {
+                        return (
+                          <div key={field.key}>
+                            <label className="text-xs text-gray-500 mb-1 block">{field.label}</label>
+                            <div className="relative">
+                              <select
+                                value={formData[field.key] || "app-password"}
+                                onChange={e => setFormData(prev => ({ ...prev, [field.key]: e.target.value }))}
+                                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500 appearance-none"
+                              >
+                                <option value="app-password">App Password (recommended)</option>
+                                <option value="imap">IMAP Direct</option>
+                              </select>
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-xs">▼</span>
+                            </div>
+                          </div>
+                        );
+                      }
+                      // For Gmail IMAP fields, only show when auth method is imap
+                      if (type === "gmail" && (field.key === "imapServer" || field.key === "imapPort")) {
+                        if ((formData["authMethod"] || "app-password") !== "imap") return null;
+                      }
+                      return (
+                        <div key={field.key}>
+                          <label className="text-xs text-gray-500 mb-1 block">{field.label}</label>
+                          <input
+                            type={field.secret ? "password" : "text"}
+                            value={formData[field.key] || ""}
+                            onChange={e => setFormData(prev => ({ ...prev, [field.key]: e.target.value }))}
+                            placeholder={field.placeholder}
+                            className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
 
                   <button

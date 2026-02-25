@@ -9,11 +9,19 @@ interface DoctorCheck {
   message: string;
 }
 
+interface ChannelInfo {
+  name: string;
+  enabled: boolean;
+  status: string;
+  detail: string;
+}
+
 interface HealthData {
   gatewayHealthy: boolean;
   checks: DoctorCheck[];
   disk: string;
   memory: string;
+  channels: ChannelInfo[];
 }
 
 export default function HealthPage() {
@@ -25,6 +33,7 @@ export default function HealthPage() {
   const [showChecks, setShowChecks] = useState(true);
   const [showDisk, setShowDisk] = useState(true);
   const [showMemory, setShowMemory] = useState(true);
+  const [showChannels, setShowChannels] = useState(true);
 
   useEffect(() => {
     fetchHealth();
@@ -61,6 +70,8 @@ export default function HealthPage() {
 
   const criticalCount = health.checks.filter(c => c.level === "critical").length;
   const warnCount = health.checks.filter(c => c.level === "warn").length;
+  const channels = health.channels || [];
+  const enabledChannels = channels.filter(c => c.enabled).length;
 
   // Parse disk info
   const diskParts = health.disk.trim().split(/\s+/);
@@ -95,6 +106,7 @@ export default function HealthPage() {
             { label: "Doctor Checks", value: showChecks, set: setShowChecks },
             { label: "Disk Usage", value: showDisk, set: setShowDisk },
             { label: "Memory Usage", value: showMemory, set: setShowMemory },
+            { label: "Channels Health", value: showChannels, set: setShowChannels },
           ].map(s => (
             <button
               key={s.label}
@@ -112,7 +124,7 @@ export default function HealthPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
           <div className="flex items-center justify-between mb-2">
             <span className="text-sm text-gray-400">Gateway</span>
@@ -136,6 +148,14 @@ export default function HealthPage() {
           </div>
           <div className="text-2xl font-bold">{warnCount}</div>
           <div className="text-xs text-gray-500 mt-1">warnings</div>
+        </div>
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-gray-400">Channels</span>
+            <span className="text-2xl">{enabledChannels > 0 ? "🟢" : "🟡"}</span>
+          </div>
+          <div className="text-2xl font-bold">{enabledChannels}/{channels.length}</div>
+          <div className="text-xs text-gray-500 mt-1">enabled</div>
         </div>
       </div>
 
@@ -162,6 +182,34 @@ export default function HealthPage() {
               </div>
             ))}
           </div>
+        </section>
+      )}
+
+      {/* Channels Health */}
+      {showChannels && (
+        <section className="bg-gray-900 rounded-xl border border-gray-800 p-5 mb-6">
+          <h2 className="text-lg font-semibold mb-4">Channels Health</h2>
+          {channels.length > 0 ? (
+            <div className="space-y-2">
+              {channels.map((channel, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-3 p-3 bg-gray-800/30 rounded-lg text-sm"
+                >
+                  <span className={`w-3 h-3 rounded-full shrink-0 ${channel.enabled ? "bg-green-400" : "bg-red-400"}`} />
+                  <span className="font-medium min-w-[120px]">{channel.name}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-xs ${
+                    channel.enabled ? "bg-green-900/50 text-green-400" : "bg-red-900/50 text-red-400"
+                  }`}>
+                    {channel.status}
+                  </span>
+                  <span className="text-xs text-gray-500">{channel.detail}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500 text-sm">No channels configured. Set up channels in the Channels page.</p>
+          )}
         </section>
       )}
 

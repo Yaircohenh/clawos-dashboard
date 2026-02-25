@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { getHealthStatus } from "@/lib/data";
+import { getHealthStatus, getChannels } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
@@ -11,5 +11,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Rate limited" }, { status: 429 });
   }
 
-  return NextResponse.json(getHealthStatus());
+  const health = getHealthStatus();
+  const channels = getChannels();
+
+  return NextResponse.json({ ...health, channels });
 }

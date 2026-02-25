@@ -16,6 +16,8 @@ export default function ApprovalsPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [locked, setLocked] = useState(true);
+  const [showUnlockModal, setShowUnlockModal] = useState(false);
 
   // Add form
   const [newAction, setNewAction] = useState("");
@@ -42,6 +44,7 @@ export default function ApprovalsPage() {
   }
 
   async function updateRisk(ruleId: string, riskScore: number) {
+    if (locked) return;
     setActionLoading(ruleId);
     try {
       const res = await fetch("/api/approvals", {
@@ -112,18 +115,85 @@ export default function ApprovalsPage() {
 
   return (
     <div>
+      {/* Unlock Modal */}
+      {showUnlockModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowUnlockModal(false)}>
+          <div className="bg-gray-900 rounded-xl border border-yellow-800 p-6 max-w-md" onClick={(e) => e.stopPropagation()}>
+            <h2 className="font-semibold text-yellow-400 mb-3 text-lg">Unlock Security Policy?</h2>
+            <div className="space-y-3 text-sm text-gray-300 mb-4">
+              <p>
+                You are about to unlock the security policy for editing. Changes to these rules directly affect what actions agents can perform.
+              </p>
+              <div className="bg-red-900/20 border border-red-800 rounded-lg p-3 text-red-300">
+                <strong>Warning:</strong> Incorrect changes can allow agents to perform dangerous operations (file deletion, code deployment, financial transactions) without approval.
+              </div>
+              <p>Only unlock if you understand the implications of modifying security rules.</p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => { setLocked(false); setShowUnlockModal(false); toast.success("Policy unlocked for editing"); }}
+                className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-sm"
+              >
+                I understand, unlock
+              </button>
+              <button
+                onClick={() => setShowUnlockModal(false)}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-lg text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold">Approvals & Security Policy</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-bold">Approvals & Security Policy</h1>
+          <button
+            onClick={() => {
+              if (locked) setShowUnlockModal(true);
+              else { setLocked(true); toast.success("Policy locked"); }
+            }}
+            className={`text-xl transition-colors ${locked ? "text-red-400 hover:text-yellow-400" : "text-green-400 hover:text-red-400"}`}
+            title={locked ? "Click to unlock editing" : "Click to lock editing"}
+          >
+            {locked ? "🔒" : "🔓"}
+          </button>
+        </div>
         <button
           onClick={() => setShowAddForm(!showAddForm)}
-          className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm"
+          disabled={locked}
+          className={`px-3 py-2 rounded-lg text-sm ${locked ? "bg-gray-700 text-gray-500 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 text-white"}`}
         >
           + Add Rule
         </button>
       </div>
 
+      {/* Risk Score Info (always visible) */}
+      <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 mb-6">
+        <h3 className="text-sm font-semibold mb-2 text-gray-300">Understanding Risk Scores</h3>
+        <p className="text-xs text-gray-400 mb-3">
+          Risk Score = severity level. Higher percentage = more dangerous action.
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <span className="flex items-center gap-1.5 text-xs">
+            <span className="w-3 h-3 rounded-full bg-gray-700" />
+            <span className="text-gray-400">0-69% Normal</span>
+          </span>
+          <span className="flex items-center gap-1.5 text-xs">
+            <span className="w-3 h-3 rounded-full bg-yellow-900/50" />
+            <span className="text-yellow-400">70-89% Warning</span>
+          </span>
+          <span className="flex items-center gap-1.5 text-xs">
+            <span className="w-3 h-3 rounded-full bg-red-900/50" />
+            <span className="text-red-400">90-100% Critical</span>
+          </span>
+        </div>
+      </div>
+
       {/* Add Form */}
-      {showAddForm && (
+      {showAddForm && !locked && (
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 mb-6">
           <h3 className="text-sm font-semibold mb-3">Add Security Rule</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
@@ -178,6 +248,7 @@ export default function ApprovalsPage() {
         actionLoading={actionLoading}
         onUpdateRisk={updateRisk}
         color="yellow"
+        locked={locked}
       />
 
       {/* Denied Actions */}
@@ -187,6 +258,7 @@ export default function ApprovalsPage() {
         actionLoading={actionLoading}
         onUpdateRisk={updateRisk}
         color="red"
+        locked={locked}
       />
 
       {/* Allowed Actions */}
@@ -197,6 +269,7 @@ export default function ApprovalsPage() {
           actionLoading={actionLoading}
           onUpdateRisk={updateRisk}
           color="green"
+          locked={locked}
         />
       )}
 
@@ -209,12 +282,13 @@ export default function ApprovalsPage() {
   );
 }
 
-function RuleSection({ title, rules, actionLoading, onUpdateRisk, color }: {
+function RuleSection({ title, rules, actionLoading, onUpdateRisk, color, locked }: {
   title: string;
   rules: SecurityRule[];
   actionLoading: string | null;
   onUpdateRisk: (id: string, score: number) => void;
   color: string;
+  locked: boolean;
 }) {
   if (rules.length === 0) return null;
 
@@ -247,8 +321,8 @@ function RuleSection({ title, rules, actionLoading, onUpdateRisk, color }: {
                         const val = parseFloat(e.target.value);
                         onUpdateRisk(rule.id, val);
                       }}
-                      disabled={actionLoading === rule.id}
-                      className="w-20 accent-blue-500"
+                      disabled={locked || actionLoading === rule.id}
+                      className={`w-20 accent-blue-500 ${locked ? "opacity-50 cursor-not-allowed" : ""}`}
                     />
                     <RiskBadge score={rule.riskScore} />
                   </div>

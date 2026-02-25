@@ -30,6 +30,7 @@ export default function AgentsPage() {
   const [fileViewAgent, setFileViewAgent] = useState<string | null>(null);
   const [agentFiles, setAgentFiles] = useState<{ name: string; size: number }[]>([]);
   const [editingFile, setEditingFile] = useState<{ name: string; content: string } | null>(null);
+  const [inlineEdit, setInlineEdit] = useState<{ agentId: string; field: "name" | "emoji"; value: string } | null>(null);
 
   const fetchAgents = useCallback(async () => {
     try {
@@ -74,6 +75,20 @@ export default function AgentsPage() {
     });
     if (res.ok) { toast.success("Agent updated"); setEditingAgent(null); fetchAgents(); }
     else toast.error("Failed to update");
+  }
+
+  async function handleInlineSave(agentId: string, field: "name" | "emoji", value: string) {
+    const payload: Record<string, string> = { action: "update", agentId };
+    payload[field] = value;
+    const res = await fetch("/api/agents", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      setAgents((prev) => prev.map((a) => (a.id === agentId ? { ...a, [field]: value } : a)));
+      toast.success(`${field === "name" ? "Name" : "Emoji"} updated`);
+    } else { toast.error("Failed to update"); }
+    setInlineEdit(null);
   }
 
   async function handleAddAgent() {
@@ -214,9 +229,51 @@ export default function AgentsPage() {
         {agents.map((agent) => (
           <div key={agent.id} className="bg-gray-900 rounded-xl border border-gray-800 p-5 hover:border-gray-700 transition-colors">
             <div className="flex items-center gap-3 mb-4">
-              <span className="text-3xl">{agent.emoji}</span>
+              {/* Inline emoji editing */}
+              {inlineEdit?.agentId === agent.id && inlineEdit.field === "emoji" ? (
+                <input
+                  value={inlineEdit.value}
+                  onChange={(e) => setInlineEdit({ ...inlineEdit, value: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleInlineSave(agent.id, "emoji", inlineEdit.value);
+                    if (e.key === "Escape") setInlineEdit(null);
+                  }}
+                  onBlur={() => handleInlineSave(agent.id, "emoji", inlineEdit.value)}
+                  className="w-12 text-center text-3xl bg-gray-800 border border-blue-500 rounded-lg focus:outline-none"
+                  autoFocus
+                />
+              ) : (
+                <span
+                  className="text-3xl cursor-pointer hover:opacity-70 transition-opacity"
+                  title="Click to edit emoji"
+                  onClick={() => setInlineEdit({ agentId: agent.id, field: "emoji", value: agent.emoji })}
+                >
+                  {agent.emoji}
+                </span>
+              )}
               <div className="flex-1 min-w-0">
-                <h2 className="font-semibold text-lg">{agent.name}</h2>
+                {/* Inline name editing */}
+                {inlineEdit?.agentId === agent.id && inlineEdit.field === "name" ? (
+                  <input
+                    value={inlineEdit.value}
+                    onChange={(e) => setInlineEdit({ ...inlineEdit, value: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleInlineSave(agent.id, "name", inlineEdit.value);
+                      if (e.key === "Escape") setInlineEdit(null);
+                    }}
+                    onBlur={() => handleInlineSave(agent.id, "name", inlineEdit.value)}
+                    className="w-full text-lg font-semibold bg-gray-800 border border-blue-500 rounded-lg px-2 py-0.5 text-white focus:outline-none"
+                    autoFocus
+                  />
+                ) : (
+                  <h2
+                    className="font-semibold text-lg cursor-pointer hover:text-blue-400 transition-colors"
+                    title="Click to edit name"
+                    onClick={() => setInlineEdit({ agentId: agent.id, field: "name", value: agent.name })}
+                  >
+                    {agent.name}
+                  </h2>
+                )}
                 <span className="text-xs text-gray-500">ID: {agent.id}</span>
               </div>
               <span className={`px-2 py-0.5 rounded-full text-xs ${agent.status === "active" ? "bg-green-900/50 text-green-400" : agent.status === "error" ? "bg-red-900/50 text-red-400" : "bg-gray-700 text-gray-400"}`}>
@@ -256,7 +313,7 @@ export default function AgentsPage() {
               </div>
             ) : (
               <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-gray-800">
-                <button onClick={() => { setEditingAgent(agent.id); setEditForm({ name: agent.name, emoji: agent.emoji, workspace: agent.workspace }); }} className="flex-1 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors">Edit</button>
+                <button onClick={() => { setEditingAgent(agent.id); setEditForm({ name: agent.name, emoji: agent.emoji, workspace: agent.workspace }); }} className="flex-1 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors">Edit All</button>
                 <button onClick={() => loadAgentFiles(agent.id)} className="flex-1 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors">Files</button>
                 <button onClick={() => handleRestart(agent.id)} className="flex-1 px-3 py-1.5 text-xs text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors">Restart</button>
                 <button onClick={() => setRemoveConfirm({ id: agent.id, step: "confirm" })} className="px-3 py-1.5 text-xs text-red-400 hover:bg-red-900/50 rounded-lg transition-colors">Remove</button>

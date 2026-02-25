@@ -19,12 +19,62 @@ interface Conversation {
 
 type ConnectionStatus = "idle" | "streaming" | "error";
 
+const STORAGE_KEY = "clawos-chat-conversations";
+const MAX_CONVERSATIONS = 50;
+
+interface StoredConversation {
+  id: string;
+  title: string;
+  messages: { id: string; role: "user" | "assistant"; content: string; timestamp: string }[];
+  createdAt: string;
+}
+
+function saveToStorage(conversations: Conversation[]) {
+  try {
+    const serialized: StoredConversation[] = conversations.slice(0, MAX_CONVERSATIONS).map((c) => ({
+      id: c.id,
+      title: c.title,
+      messages: c.messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp.toISOString(),
+      })),
+      createdAt: c.createdAt.toISOString(),
+    }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(serialized));
+  } catch { /* storage full or unavailable */ }
+}
+
+function loadFromStorage(): { conversations: Conversation[]; activeId: string | null } {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return { conversations: [], activeId: null };
+    const stored: StoredConversation[] = JSON.parse(raw);
+    const conversations: Conversation[] = stored.map((c) => ({
+      id: c.id,
+      title: c.title,
+      messages: c.messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        timestamp: new Date(m.timestamp),
+      })),
+      createdAt: new Date(c.createdAt),
+    }));
+    return { conversations, activeId: conversations.length > 0 ? conversations[0].id : null };
+  } catch {
+    return { conversations: [], activeId: null };
+  }
+}
+
 export default function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [showAllChats, setShowAllChats] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -33,6 +83,23 @@ export default function ChatPage() {
   const messages = activeConversation?.messages || [];
   const pastConversations = conversations.filter((c) => c.id !== activeId);
   const visiblePast = showAllChats ? pastConversations : pastConversations.slice(0, 5);
+
+  // Hydrate from localStorage on mount
+  useEffect(() => {
+    const { conversations: loaded, activeId: loadedActiveId } = loadFromStorage();
+    if (loaded.length > 0) {
+      setConversations(loaded);
+      setActiveId(loadedActiveId);
+    }
+    setHydrated(true);
+  }, []);
+
+  // Persist to localStorage whenever conversations change (after hydration)
+  useEffect(() => {
+    if (hydrated) {
+      saveToStorage(conversations);
+    }
+  }, [conversations, hydrated]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

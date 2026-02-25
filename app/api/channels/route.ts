@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { execFileSync } from "child_process";
 import { checkRateLimit } from "@/lib/rate-limit";
 
 export const dynamic = "force-dynamic";
@@ -35,23 +36,36 @@ const CHANNEL_TEMPLATES: Record<
         placeholder: "123456:ABC-DEF...",
         secret: true,
       },
+      {
+        key: "uid",
+        label: "Your Telegram User ID",
+        placeholder: "123456789",
+      },
+      {
+        key: "pairingCode",
+        label: "Pairing Code (optional)",
+        placeholder: "Auto-generated after save",
+      },
     ],
     instructions:
-      "1. Message @BotFather on Telegram\n2. Send /newbot and follow prompts\n3. Copy the bot token here\n4. Run `openclaw channels add telegram --token <TOKEN>`",
+      "1. Message @BotFather on Telegram\n2. Send /newbot and follow prompts\n3. Copy the bot token here\n4. Find your User ID: message @userinfobot\n5. Run `openclaw channels add telegram --token <TOKEN>`\n6. Use pairing code to link your Telegram account",
   },
   gmail: {
     name: "Gmail",
     fields: [
       { key: "email", label: "Email Address", placeholder: "you@gmail.com" },
+      { key: "authMethod", label: "Auth Method", placeholder: "app-password" },
       {
         key: "appPassword",
         label: "App Password",
         placeholder: "xxxx xxxx xxxx xxxx",
         secret: true,
       },
+      { key: "imapServer", label: "IMAP Server", placeholder: "imap.gmail.com" },
+      { key: "imapPort", label: "IMAP Port", placeholder: "993" },
     ],
     instructions:
-      "1. Go to Google Account > Security > 2-Step Verification\n2. At the bottom, select App passwords\n3. Generate a password for 'Mail'\n4. Use that 16-character password here",
+      "Method 1 — App Password (recommended):\n1. Go to Google Account > Security > 2-Step Verification\n2. At the bottom, select App passwords\n3. Generate a password for 'Mail'\n4. Use that 16-character password here\n\nMethod 2 — IMAP Direct:\n1. Set Auth Method to 'imap'\n2. Enter your IMAP server and port\n3. Use for non-Gmail IMAP providers",
   },
   googlechat: {
     name: "Google Chat",
@@ -93,6 +107,20 @@ function writeConfig(config: Record<string, unknown>) {
   const dir = CONFIG_PATH.replace(/\/[^/]+$/, "");
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n");
+}
+
+function runFile(bin: string, args: string[]): string {
+  try {
+    const stdout = execFileSync(bin, args, {
+      encoding: "utf-8",
+      timeout: 15000,
+      env: { ...process.env, NO_COLOR: "1" },
+    });
+    return (stdout as string).trim();
+  } catch (err: any) {
+    if (err?.stdout) return (err.stdout as string).trim();
+    return "";
+  }
 }
 
 export async function GET() {
@@ -152,6 +180,28 @@ export async function POST(request: NextRequest) {
       writeConfig(config);
 
       return NextResponse.json({ success: true });
+    }
+
+    case "qr": {
+      const output = runFile("openclaw", ["channels", "whatsapp", "qr"]);
+      return NextResponse.json({ output: output || "No QR output. Is the WhatsApp plugin running?" });
+    }
+
+    case "healthCheck": {
+      const output = runFile("openclaw", ["channels", "status"]);
+      const statuses: Record<string, { connected: boolean; detail: string }> = {};
+      const lines = output.split("\n");
+      for (const line of lines) {
+        const match = line.match(/^-\s*(\w+)\s+\w+:\s+(enabled|disabled),\s*(.*)/);
+        if (match) {
+          const name = match[1].toLowerCase();
+          statuses[name] = {
+            connected: match[2] === "enabled",
+            detail: match[3].trim(),
+          };
+        }
+      }
+      return NextResponse.json({ statuses, raw: output });
     }
 
     default:

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { getCostSummary } from "@/lib/data";
+import { getCostSummary, getSessions, getAgents } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +20,15 @@ function writeLimits(limits: Record<string, number>) {
   writeFileSync(LIMITS_PATH, JSON.stringify(limits, null, 2) + "\n");
 }
 
+interface AgentTokenBreakdown {
+  agentId: string;
+  name: string;
+  emoji: string;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
 export async function GET(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for") || "127.0.0.1";
   const { allowed } = checkRateLimit(`costs:${ip}`);
@@ -30,7 +39,26 @@ export async function GET(request: NextRequest) {
   const cost = getCostSummary();
   const limits = readLimits();
 
-  return NextResponse.json({ ...cost, limits });
+  // Aggregate tokens by agent
+  const sessions = getSessions();
+  const agents = getAgents();
+  const agentMap = new Map(agents.map((a) => [a.id, { name: a.name, emoji: a.emoji }]));
+
+  const tokensByAgent = new Map<string, { inputTokens: number; outputTokens: number; totalTokens: number }>();
+  for (const session of sessions) {
+    const existing = tokensByAgent.get(session.agentId) || { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+    existing.inputTokens += session.inputTokens;
+    existing.outputTokens += session.outputTokens;
+    existing.totalTokens += session.totalTokens;
+    tokensByAgent.set(session.agentId, existing);
+  }
+
+  const agentBreakdown: AgentTokenBreakdown[] = Array.from(tokensByAgent.entries()).map(([agentId, tokens]) => {
+    const info = agentMap.get(agentId) || { name: agentId, emoji: "🤖" };
+    return { agentId, name: info.name, emoji: info.emoji, ...tokens };
+  }).sort((a, b) => b.totalTokens - a.totalTokens);
+
+  return NextResponse.json({ ...cost, limits, agentBreakdown });
 }
 
 export async function POST(request: NextRequest) {

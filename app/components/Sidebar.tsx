@@ -9,6 +9,7 @@ const navItems = [
   { href: "/monitor", label: "Monitor", icon: "📹" },
   { href: "/", label: "Overview", icon: "📊", dividerAfter: true },
   { href: "/agents", label: "Agents", icon: "🤖" },
+  { href: "/models", label: "Models", icon: "🧬" },
   { href: "/sessions", label: "Sessions", icon: "🔄" },
   { href: "/skills", label: "Skills", icon: "🧩" },
   { href: "/plugins", label: "Plugins", icon: "🔌" },
