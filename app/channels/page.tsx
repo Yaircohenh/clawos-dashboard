@@ -210,9 +210,20 @@ export default function ChannelsPage() {
                         {qrLoading ? "Loading..." : "Get QR Code"}
                       </button>
                       {qrOutput && (
-                        <pre className="text-xs text-gray-300 bg-gray-800 rounded-lg p-3 whitespace-pre-wrap font-mono overflow-x-auto">
-                          {qrOutput}
-                        </pre>
+                        <div className="mt-2">
+                          {qrOutput.includes("No QR output") || qrOutput.includes("plugin") ? (
+                            <div className="bg-yellow-900/20 border border-yellow-800 rounded-lg p-3 text-xs text-yellow-300">
+                              <p className="font-medium mb-1">WhatsApp plugin not running</p>
+                              <p className="text-yellow-400">To get a QR code, first start the WhatsApp plugin:</p>
+                              <pre className="mt-2 bg-gray-800 rounded p-2 text-gray-300 font-mono">openclaw channels add whatsapp{"\n"}openclaw gateway restart</pre>
+                              <p className="mt-2 text-yellow-400">Then click &quot;Get QR Code&quot; again to scan with your phone.</p>
+                            </div>
+                          ) : (
+                            <pre className="text-xs text-gray-300 bg-gray-800 rounded-lg p-3 whitespace-pre-wrap font-mono overflow-x-auto">
+                              {qrOutput}
+                            </pre>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}

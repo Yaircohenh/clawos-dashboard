@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 
 interface Message {
@@ -78,6 +78,8 @@ export default function ChatPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Ref-based accumulator so rapid SSE chunks don't lose data through React batching
+  const fullTextRef = useRef("");
 
   const activeConversation = conversations.find((c) => c.id === activeId);
   const messages = activeConversation?.messages || [];
@@ -124,7 +126,7 @@ export default function ChatPage() {
   }
 
   function switchChat(id: string) {
-    if (abortRef.current) abortRef.current.abort();
+    // Don't abort — let background stream complete
     setActiveId(id);
     setStatus("idle");
   }
@@ -159,6 +161,7 @@ export default function ChatPage() {
     );
     setInput("");
     setStatus("streaming");
+    fullTextRef.current = "";
 
     try {
       const controller = new AbortController();
@@ -176,38 +179,73 @@ export default function ChatPage() {
       if (!reader) throw new Error("No response body");
 
       const decoder = new TextDecoder();
-      let fullText = "";
+      // Buffer for incomplete SSE lines split across chunks
+      let sseBuffer = "";
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        for (const line of chunk.split("\n")) {
+        const raw = decoder.decode(value, { stream: true });
+        sseBuffer += raw;
+
+        // Process complete lines only
+        const lines = sseBuffer.split("\n");
+        // Keep the last (possibly incomplete) line in the buffer
+        sseBuffer = lines.pop() || "";
+
+        for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
           try {
             const data = JSON.parse(line.slice(6));
             if (data.type === "chunk") {
-              fullText += data.text;
-              updateAssistantMsg(convId!, assistantMsg.id, fullText);
-            } else if (data.type === "done" && data.output && !fullText) {
-              fullText = data.output;
-              updateAssistantMsg(convId!, assistantMsg.id, fullText);
+              fullTextRef.current += data.text;
+              updateAssistantMsg(convId!, assistantMsg.id, fullTextRef.current);
+            } else if (data.type === "done") {
+              // Always prefer the full output from the done event
+              // This catches cases where chunks were missed or incomplete
+              if (data.output) {
+                const finalText = data.output.trim();
+                if (finalText && finalText.length >= fullTextRef.current.length) {
+                  fullTextRef.current = finalText;
+                }
+              }
+              updateAssistantMsg(convId!, assistantMsg.id, fullTextRef.current);
             } else if (data.type === "error") {
-              fullText += `\n\n*Error: ${data.text}*`;
-              updateAssistantMsg(convId!, assistantMsg.id, fullText);
+              fullTextRef.current += `\n\n*Error: ${data.text}*`;
+              updateAssistantMsg(convId!, assistantMsg.id, fullTextRef.current);
             }
-          } catch { /* skip */ }
+          } catch { /* skip unparseable lines */ }
         }
       }
 
-      if (!fullText) {
+      // Process any remaining buffer
+      if (sseBuffer.startsWith("data: ")) {
+        try {
+          const data = JSON.parse(sseBuffer.slice(6));
+          if (data.type === "chunk") {
+            fullTextRef.current += data.text;
+          } else if (data.type === "done" && data.output) {
+            const finalText = data.output.trim();
+            if (finalText && finalText.length >= fullTextRef.current.length) {
+              fullTextRef.current = finalText;
+            }
+          }
+          updateAssistantMsg(convId!, assistantMsg.id, fullTextRef.current);
+        } catch { /* skip */ }
+      }
+
+      if (!fullTextRef.current) {
         updateAssistantMsg(convId!, assistantMsg.id, "*No response. Is the gateway running?*");
       }
       setStatus("idle");
     } catch (err: unknown) {
       if (err instanceof Error && err.name === "AbortError") { setStatus("idle"); return; }
       setStatus("error");
-      updateAssistantMsg(convId!, assistantMsg.id, `*Connection error: ${err instanceof Error ? err.message : "Unknown"}*`);
+      updateAssistantMsg(convId!, assistantMsg.id,
+        fullTextRef.current
+          ? fullTextRef.current + `\n\n*Connection closed: ${err instanceof Error ? err.message : "Unknown"}*`
+          : `*Connection error: ${err instanceof Error ? err.message : "Unknown"}*`
+      );
       setTimeout(() => setStatus("idle"), 3000);
     }
   }

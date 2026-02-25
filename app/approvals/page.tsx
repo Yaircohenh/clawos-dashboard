@@ -148,26 +148,27 @@ export default function ApprovalsPage() {
       )}
 
       <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold">Approvals & Security Policy</h1>
         <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold">Approvals & Security Policy</h1>
           <button
             onClick={() => {
               if (locked) setShowUnlockModal(true);
               else { setLocked(true); toast.success("Policy locked"); }
             }}
-            className={`text-xl transition-colors ${locked ? "text-red-400 hover:text-yellow-400" : "text-green-400 hover:text-red-400"}`}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm transition-colors ${locked ? "bg-red-900/30 text-red-400 hover:bg-yellow-900/30 hover:text-yellow-400" : "bg-green-900/30 text-green-400 hover:bg-red-900/30 hover:text-red-400"}`}
             title={locked ? "Click to unlock editing" : "Click to lock editing"}
           >
-            {locked ? "🔒" : "🔓"}
+            <span>{locked ? "🔒" : "🔓"}</span>
+            <span>{locked ? "Locked" : "Unlocked"}</span>
+          </button>
+          <button
+            onClick={() => setShowAddForm(!showAddForm)}
+            disabled={locked}
+            className={`px-3 py-2 rounded-lg text-sm ${locked ? "bg-gray-700 text-gray-500 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 text-white"}`}
+          >
+            + Add Rule
           </button>
         </div>
-        <button
-          onClick={() => setShowAddForm(!showAddForm)}
-          disabled={locked}
-          className={`px-3 py-2 rounded-lg text-sm ${locked ? "bg-gray-700 text-gray-500 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700 text-white"}`}
-        >
-          + Add Rule
-        </button>
       </div>
 
       {/* Risk Score Info (always visible) */}
