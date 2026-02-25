@@ -1,1 +1,54 @@
 @import "tailwindcss";
+
+/* Light mode overrides — activated by .light on <html> */
+html.light body {
+  background: #f8fafc;
+  color: #1e293b;
+}
+
+html.light .bg-gray-950 { background: #f8fafc; }
+html.light .bg-gray-900 { background: #ffffff; }
+html.light .bg-gray-800 { background: #f1f5f9; }
+html.light .bg-gray-800\/50 { background: rgba(241, 245, 249, 0.5); }
+html.light .bg-gray-800\/30 { background: rgba(241, 245, 249, 0.3); }
+html.light .bg-gray-900\/50 { background: rgba(255, 255, 255, 0.5); }
+html.light .bg-gray-900\/30 { background: rgba(255, 255, 255, 0.3); }
+html.light .bg-gray-700 { background: #e2e8f0; }
+
+html.light .text-gray-100 { color: #1e293b; }
+html.light .text-gray-200 { color: #334155; }
+html.light .text-gray-300 { color: #475569; }
+html.light .text-gray-400 { color: #64748b; }
+html.light .text-gray-500 { color: #94a3b8; }
+html.light .text-gray-600 { color: #94a3b8; }
+html.light .text-white { color: #0f172a; }
+
+html.light .border-gray-800 { border-color: #e2e8f0; }
+html.light .border-gray-700 { border-color: #cbd5e1; }
+
+html.light .hover\:bg-gray-800:hover { background: #e2e8f0; }
+html.light .hover\:text-white:hover { color: #0f172a; }
+html.light .hover\:border-gray-700:hover { border-color: #94a3b8; }
+
+html.light .focus\:border-blue-500:focus { border-color: #3b82f6; }
+html.light .focus\:ring-blue-500:focus { --tw-ring-color: #3b82f6; }
+
+/* Terminal in light mode */
+html.light .bg-gray-950 .bg-gray-950 { background: #1e293b; }
+
+/* Keep dark badge/status colors in light mode */
+html.light .bg-green-900\/50 { background: rgba(20, 83, 45, 0.15); }
+html.light .bg-red-900\/50 { background: rgba(127, 29, 29, 0.15); }
+html.light .bg-yellow-900\/50 { background: rgba(113, 63, 18, 0.15); }
+html.light .bg-blue-900\/40 { background: rgba(30, 58, 138, 0.15); }
+html.light .bg-purple-900\/40 { background: rgba(88, 28, 135, 0.15); }
+html.light .bg-orange-900\/40 { background: rgba(124, 45, 18, 0.15); }
+
+html.light input, html.light select, html.light textarea {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #1e293b;
+}
+html.light input::placeholder, html.light textarea::placeholder {
+  color: #94a3b8;
+}

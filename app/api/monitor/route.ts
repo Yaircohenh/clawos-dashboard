@@ -69,40 +69,52 @@ function parseSessionLines(
     for (const line of rawLines) {
       try {
         const entry = JSON.parse(line);
-        if (entry.type === "tool_use" || entry.role === "tool") {
-          const toolName =
-            entry.name || entry.tool || entry.content?.name || "tool";
-          const input = entry.input
-            ? JSON.stringify(entry.input).slice(0, 200)
-            : "";
-          result.push({
-            type: "tool",
-            text: `[${toolName}] ${input}`,
-            timestamp: entry.timestamp,
-          });
-        } else if (entry.role === "assistant" || entry.type === "text") {
-          const text =
-            typeof entry.content === "string"
-              ? entry.content
-              : entry.text || JSON.stringify(entry.content || "").slice(0, 300);
-          if (text.trim()) {
-            result.push({
-              type: "response",
-              text: text.slice(0, 500),
-              timestamp: entry.timestamp,
-            });
-          }
-        } else if (entry.role === "user") {
-          const text =
-            typeof entry.content === "string"
-              ? entry.content
-              : entry.text || "";
-          if (text.trim()) {
-            result.push({
-              type: "user",
-              text: text.slice(0, 300),
-              timestamp: entry.timestamp,
-            });
+
+        // OpenClaw session format: { type: "message", message: { role, content: [...] } }
+        if (entry.type === "message" && entry.message) {
+          const msg = entry.message;
+          const role = msg.role;
+
+          // Extract text from content array
+          const contentArr = Array.isArray(msg.content) ? msg.content : [];
+          const textParts = contentArr
+            .filter((c: Record<string, unknown>) => c.type === "text" && c.text)
+            .map((c: Record<string, unknown>) => c.text as string);
+          const text = textParts.join("\n").trim();
+
+          // Check for tool_use blocks in content
+          const toolUses = contentArr.filter(
+            (c: Record<string, unknown>) => c.type === "tool_use"
+          );
+
+          if (role === "assistant") {
+            // Add tool calls first
+            for (const t of toolUses) {
+              const inputStr = t.input
+                ? JSON.stringify(t.input).slice(0, 200)
+                : "";
+              result.push({
+                type: "tool",
+                text: `[${t.name || "tool"}] ${inputStr}`,
+                timestamp: entry.timestamp,
+              });
+            }
+            // Then add text response
+            if (text) {
+              result.push({
+                type: "response",
+                text: text.slice(0, 500),
+                timestamp: entry.timestamp,
+              });
+            }
+          } else if (role === "user") {
+            if (text) {
+              result.push({
+                type: "user",
+                text: text.slice(0, 300),
+                timestamp: entry.timestamp,
+              });
+            }
           }
         } else if (
           entry.type === "error" ||
@@ -111,10 +123,12 @@ function parseSessionLines(
         ) {
           result.push({
             type: "error",
-            text: entry.message || entry.error || JSON.stringify(entry).slice(0, 300),
+            text:
+              entry.message || entry.error || JSON.stringify(entry).slice(0, 300),
             timestamp: entry.timestamp,
           });
         }
+        // Skip "custom" entries (cache-ttl etc.)
       } catch {
         // skip non-JSON lines
       }

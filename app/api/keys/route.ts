@@ -247,6 +247,58 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, valid: true });
   }
 
+  if (action === "add") {
+    const name = (body.name as string || "").trim();
+    const value = (body.value as string || "").trim();
+    const type = (body.type as string || "env").trim();
+
+    if (!name || !/^[A-Z_][A-Z0-9_]*$/.test(name) || name.length > 50) {
+      return NextResponse.json({ error: "Invalid key name (use UPPER_SNAKE_CASE)" }, { status: 400 });
+    }
+    if (!value || value.length > 500) {
+      return NextResponse.json({ error: "Value required (max 500 chars)" }, { status: 400 });
+    }
+
+    if (type === "env") {
+      // Write to .env.local file for the dashboard process
+      const envPath = "/workspace/clawos-dashboard/.env.local";
+      try {
+        let envContent = "";
+        try { envContent = readFileSync(envPath, "utf-8"); } catch { /* file may not exist */ }
+        // Remove existing line if present
+        const lines = envContent.split("\n").filter(l => !l.startsWith(`${name}=`));
+        lines.push(`${name}=${value}`);
+        writeFileSync(envPath, lines.filter(l => l.trim()).join("\n") + "\n");
+        // Also set in current process
+        process.env[name] = value;
+        return NextResponse.json({ success: true });
+      } catch (err: unknown) {
+        return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
+      }
+    }
+
+    return NextResponse.json({ error: "Unsupported key type" }, { status: 400 });
+  }
+
+  if (action === "remove") {
+    const name = (body.name as string || "").trim();
+    if (!name || !/^[A-Z_][A-Z0-9_]*$/.test(name)) {
+      return NextResponse.json({ error: "Invalid key name" }, { status: 400 });
+    }
+
+    const envPath = "/workspace/clawos-dashboard/.env.local";
+    try {
+      let envContent = "";
+      try { envContent = readFileSync(envPath, "utf-8"); } catch { /* ok */ }
+      const lines = envContent.split("\n").filter(l => !l.startsWith(`${name}=`));
+      writeFileSync(envPath, lines.filter(l => l.trim()).join("\n") + "\n");
+      delete process.env[name];
+      return NextResponse.json({ success: true });
+    } catch (err: unknown) {
+      return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
+    }
+  }
+
   if (action === "updateGateway") {
     const port = body.port as number;
     if (typeof port !== "number" || port < 1 || port > 65535) {
