@@ -379,6 +379,49 @@ export default function ChatPage() {
     }
   }
 
+  async function stopGeneration() {
+    // 1. Abort the SSE fetch (kills main CLI process via abort signal)
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+
+    // 2. Stop follow-up polling
+    stopPolling();
+
+    // 3. Kill any remaining openclaw agent processes (main + subagents)
+    try {
+      await fetch("/api/chat/stop", { method: "POST" });
+    } catch {
+      // best effort
+    }
+
+    // 4. Append stopped indicator to the last assistant message
+    if (activeId) {
+      setConversations((prev) =>
+        prev.map((c) => {
+          if (c.id !== activeId) return c;
+          const msgs = [...c.messages];
+          for (let i = msgs.length - 1; i >= 0; i--) {
+            if (msgs[i].role === "assistant") {
+              const current = msgs[i].content;
+              msgs[i] = {
+                ...msgs[i],
+                content: current
+                  ? current + "\n\n*Stopped by user*"
+                  : "*Stopped by user*",
+              };
+              break;
+            }
+          }
+          return { ...c, messages: msgs };
+        })
+      );
+    }
+
+    setStatus("idle");
+  }
+
   async function refreshFromSession() {
     if (status === "streaming") return;
     try {
@@ -621,17 +664,22 @@ export default function ChatPage() {
               className="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-none max-h-32"
               style={{ minHeight: "48px" }}
             />
-            <button
-              onClick={sendMessage}
-              disabled={
-                !input.trim() ||
-                status === "streaming" ||
-                status === "waiting"
-              }
-              className="px-5 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl font-medium transition-colors whitespace-nowrap"
-            >
-              Send
-            </button>
+            {status === "streaming" || status === "waiting" ? (
+              <button
+                onClick={stopGeneration}
+                className="px-5 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-medium transition-colors whitespace-nowrap"
+              >
+                Stop
+              </button>
+            ) : (
+              <button
+                onClick={sendMessage}
+                disabled={!input.trim()}
+                className="px-5 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl font-medium transition-colors whitespace-nowrap"
+              >
+                Send
+              </button>
+            )}
           </div>
         </div>
       </div>
