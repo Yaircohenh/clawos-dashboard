@@ -3,11 +3,23 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 
+interface FileAttachment {
+  id: string;
+  name: string;
+  size: number;
+  type: "image" | "document" | "text" | "spreadsheet";
+  mimeType: string;
+  path: string;
+  extractedText: string | null;
+  previewUrl?: string; // local object URL for image preview
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
+  files?: FileAttachment[];
 }
 
 interface Conversation {
@@ -22,31 +34,46 @@ type ConnectionStatus = "idle" | "streaming" | "waiting" | "error";
 const STORAGE_KEY = "clawos-chat-conversations";
 const MAX_CONVERSATIONS = 50;
 
+interface StoredMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+  files?: FileAttachment[];
+}
 interface StoredConversation {
   id: string;
   title: string;
-  messages: { id: string; role: "user" | "assistant"; content: string; timestamp: string }[];
+  messages: StoredMessage[];
   createdAt: string;
 }
 
 function saveToStorage(conversations: Conversation[]) {
   try {
-    const serialized: StoredConversation[] = conversations.slice(0, MAX_CONVERSATIONS).map((c) => ({
-      id: c.id,
-      title: c.title,
-      messages: c.messages.map((m) => ({
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        timestamp: m.timestamp.toISOString(),
-      })),
-      createdAt: c.createdAt.toISOString(),
-    }));
+    const serialized: StoredConversation[] = conversations
+      .slice(0, MAX_CONVERSATIONS)
+      .map((c) => ({
+        id: c.id,
+        title: c.title,
+        messages: c.messages.map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          timestamp: m.timestamp.toISOString(),
+          files: m.files?.map((f) => ({ ...f, previewUrl: undefined })),
+        })),
+        createdAt: c.createdAt.toISOString(),
+      }));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(serialized));
-  } catch { /* storage full or unavailable */ }
+  } catch {
+    /* storage full or unavailable */
+  }
 }
 
-function loadFromStorage(): { conversations: Conversation[]; activeId: string | null } {
+function loadFromStorage(): {
+  conversations: Conversation[];
+  activeId: string | null;
+} {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return { conversations: [], activeId: null };
@@ -59,14 +86,31 @@ function loadFromStorage(): { conversations: Conversation[]; activeId: string | 
         role: m.role,
         content: m.content,
         timestamp: new Date(m.timestamp),
+        files: m.files,
       })),
       createdAt: new Date(c.createdAt),
     }));
-    return { conversations, activeId: conversations.length > 0 ? conversations[0].id : null };
+    return {
+      conversations,
+      activeId: conversations.length > 0 ? conversations[0].id : null,
+    };
   } catch {
     return { conversations: [], activeId: null };
   }
 }
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+const FILE_ICON: Record<string, string> = {
+  image: "🖼️",
+  document: "📄",
+  text: "📝",
+  spreadsheet: "📊",
+};
 
 export default function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -75,28 +119,32 @@ export default function ChatPage() {
   const [status, setStatus] = useState<ConnectionStatus>("idle");
   const [showAllChats, setShowAllChats] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<FileAttachment[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Ref-based accumulator so rapid SSE chunks don't lose data through React batching
   const fullTextRef = useRef("");
 
   const activeConversation = conversations.find((c) => c.id === activeId);
   const messages = activeConversation?.messages || [];
   const pastConversations = conversations.filter((c) => c.id !== activeId);
-  const visiblePast = showAllChats ? pastConversations : pastConversations.slice(0, 5);
+  const visiblePast = showAllChats
+    ? pastConversations
+    : pastConversations.slice(0, 5);
 
-  // Clean up polling on unmount
   useEffect(() => {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
 
-  // Hydrate from localStorage on mount
   useEffect(() => {
-    const { conversations: loaded, activeId: loadedActiveId } = loadFromStorage();
+    const { conversations: loaded, activeId: loadedActiveId } =
+      loadFromStorage();
     if (loaded.length > 0) {
       setConversations(loaded);
       setActiveId(loadedActiveId);
@@ -104,7 +152,6 @@ export default function ChatPage() {
     setHydrated(true);
   }, []);
 
-  // Persist to localStorage whenever conversations change (after hydration)
   useEffect(() => {
     if (hydrated) {
       saveToStorage(conversations);
@@ -143,7 +190,6 @@ export default function ChatPage() {
     }
   }
 
-  /** Poll /api/chat/follow-ups for subagent responses */
   function startFollowUpPolling(
     convId: string,
     msgId: string,
@@ -160,8 +206,10 @@ export default function ChatPage() {
     let separatorAdded = false;
 
     pollRef.current = setInterval(async () => {
-      // Check timeouts
-      if (Date.now() - startTime > MAX_TOTAL_MS || Date.now() - lastActivity > IDLE_TIMEOUT_MS) {
+      if (
+        Date.now() - startTime > MAX_TOTAL_MS ||
+        Date.now() - lastActivity > IDLE_TIMEOUT_MS
+      ) {
         stopPolling();
         setStatus("idle");
         return;
@@ -190,14 +238,125 @@ export default function ChatPage() {
           currentBaseline = data.lineCount;
         }
       } catch {
-        // Network error — keep trying until timeout
+        // keep trying
       }
     }, 3000);
   }
 
+  // --- File upload ---
+
+  async function uploadFile(file: File): Promise<FileAttachment | null> {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    try {
+      const res = await fetch("/api/chat/upload", {
+        method: "POST",
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.error || "Upload failed");
+        return null;
+      }
+      const data = await res.json();
+      const attachment: FileAttachment = {
+        id: data.id,
+        name: data.name,
+        size: data.size,
+        type: data.type,
+        mimeType: data.mimeType,
+        path: data.path,
+        extractedText: data.extractedText,
+      };
+
+      // Create local preview URL for images
+      if (attachment.type === "image") {
+        attachment.previewUrl = URL.createObjectURL(file);
+      }
+
+      return attachment;
+    } catch {
+      alert("Upload failed");
+      return null;
+    }
+  }
+
+  async function handleFiles(files: FileList | File[]) {
+    const fileArray = Array.from(files);
+    if (fileArray.length === 0) return;
+
+    setUploading(true);
+    const results = await Promise.all(fileArray.map(uploadFile));
+    const successful = results.filter(Boolean) as FileAttachment[];
+    if (successful.length > 0) {
+      setPendingFiles((prev) => [...prev, ...successful]);
+    }
+    setUploading(false);
+  }
+
+  function removePendingFile(id: string) {
+    setPendingFiles((prev) => {
+      const removed = prev.find((f) => f.id === id);
+      if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+      return prev.filter((f) => f.id !== id);
+    });
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    if (e.dataTransfer.files.length > 0) {
+      handleFiles(e.dataTransfer.files);
+    }
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(true);
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+  }
+
+  // --- Build message text with file content ---
+
+  function buildMessageWithFiles(
+    text: string,
+    files: FileAttachment[]
+  ): string {
+    if (files.length === 0) return text;
+
+    const parts: string[] = [];
+    if (text) parts.push(text);
+
+    for (const f of files) {
+      if (f.extractedText) {
+        parts.push(
+          `[Attached file: ${f.name}]\n\`\`\`\n${f.extractedText.slice(0, 30000)}\n\`\`\``
+        );
+      } else if (f.type === "image") {
+        parts.push(
+          `[Attached image: ${f.name} — saved at ${f.path}]`
+        );
+      } else {
+        parts.push(
+          `[Attached file: ${f.name} (${formatSize(f.size)}) — saved at ${f.path}]`
+        );
+      }
+    }
+
+    return parts.join("\n\n");
+  }
+
+  // --- Chat actions ---
+
   function newChat() {
     if (abortRef.current) abortRef.current.abort();
     stopPolling();
+    setPendingFiles([]);
     const conv: Conversation = {
       id: crypto.randomUUID(),
       title: "New conversation",
@@ -212,21 +371,21 @@ export default function ChatPage() {
 
   function switchChat(id: string) {
     setActiveId(id);
-    // Don't change status or stop polling — let follow-ups continue in background
   }
 
   async function sendMessage() {
     const text = input.trim();
-    if (!text || status === "streaming" || status === "waiting") return;
+    const files = [...pendingFiles];
+    if ((!text && files.length === 0) || status === "streaming" || status === "waiting")
+      return;
 
     stopPolling();
 
-    // Ensure we have an active conversation
     let convId = activeId;
     if (!convId) {
       const conv: Conversation = {
         id: crypto.randomUUID(),
-        title: text.slice(0, 40),
+        title: (text || files[0]?.name || "File").slice(0, 40),
         messages: [],
         createdAt: new Date(),
       };
@@ -235,11 +394,15 @@ export default function ChatPage() {
       setActiveId(convId);
     }
 
+    // Build the full message text that gets sent to Tom
+    const fullMessage = buildMessageWithFiles(text, files);
+
     const userMsg: Message = {
       id: crypto.randomUUID(),
       role: "user",
-      content: text,
+      content: text || `Sent ${files.length} file${files.length > 1 ? "s" : ""}`,
       timestamp: new Date(),
+      files: files.length > 0 ? files : undefined,
     };
     const assistantMsg: Message = {
       id: crypto.randomUUID(),
@@ -251,7 +414,10 @@ export default function ChatPage() {
     setConversations((prev) =>
       prev.map((c) => {
         if (c.id !== convId) return c;
-        const title = c.messages.length === 0 ? text.slice(0, 40) : c.title;
+        const title =
+          c.messages.length === 0
+            ? (text || files[0]?.name || "File").slice(0, 40)
+            : c.title;
         return {
           ...c,
           title,
@@ -260,6 +426,7 @@ export default function ChatPage() {
       })
     );
     setInput("");
+    setPendingFiles([]);
     setStatus("streaming");
     fullTextRef.current = "";
 
@@ -270,7 +437,7 @@ export default function ChatPage() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ message: fullMessage }),
         signal: controller.signal,
       });
 
@@ -317,12 +484,11 @@ export default function ChatPage() {
               updateAssistantMsg(convId!, assistantMsg.id, fullTextRef.current);
             }
           } catch {
-            /* skip unparseable lines */
+            /* skip */
           }
         }
       }
 
-      // Process remaining buffer
       if (sseBuffer.startsWith("data: ")) {
         try {
           const data = JSON.parse(sseBuffer.slice(6));
@@ -355,7 +521,6 @@ export default function ChatPage() {
         );
       }
 
-      // If subagents were spawned, start polling for their responses
       if (spawned && baseline > 0) {
         startFollowUpPolling(convId!, assistantMsg.id, baseline);
       } else {
@@ -380,23 +545,16 @@ export default function ChatPage() {
   }
 
   async function stopGeneration() {
-    // 1. Abort the SSE fetch (kills main CLI process via abort signal)
     if (abortRef.current) {
       abortRef.current.abort();
       abortRef.current = null;
     }
-
-    // 2. Stop follow-up polling
     stopPolling();
-
-    // 3. Kill any remaining openclaw agent processes (main + subagents)
     try {
       await fetch("/api/chat/stop", { method: "POST" });
     } catch {
-      // best effort
+      /* best effort */
     }
-
-    // 4. Append stopped indicator to the last assistant message
     if (activeId) {
       setConversations((prev) =>
         prev.map((c) => {
@@ -418,7 +576,6 @@ export default function ChatPage() {
         })
       );
     }
-
     setStatus("idle");
   }
 
@@ -428,22 +585,16 @@ export default function ChatPage() {
       const res = await fetch("/api/chat/latest");
       if (!res.ok) return;
       const data = await res.json();
-
       if (!data.userMessage || data.responses.length === 0) return;
-
       const combined = data.responses.join("\n\n---\n\n");
       const convId = activeId;
-
       if (convId) {
-        // Update existing conversation — find last assistant message
         setConversations((prev) =>
           prev.map((c) => {
             if (c.id !== convId) return c;
             const msgs = [...c.messages];
-            // Find the last assistant message
             for (let i = msgs.length - 1; i >= 0; i--) {
               if (msgs[i].role === "assistant") {
-                // Only update if session has more content
                 if (combined.length > msgs[i].content.length) {
                   msgs[i] = { ...msgs[i], content: combined };
                 }
@@ -455,7 +606,6 @@ export default function ChatPage() {
         );
         fullTextRef.current = combined;
       } else {
-        // No active conversation — create one from session data
         const conv: Conversation = {
           id: crypto.randomUUID(),
           title: data.userMessage.slice(0, 40),
@@ -479,23 +629,25 @@ export default function ChatPage() {
         setActiveId(conv.id);
         fullTextRef.current = combined;
       }
-
       stopPolling();
       setStatus("idle");
     } catch {
-      // silently fail
+      /* silently fail */
     }
   }
 
   function clearConversation() {
     if (abortRef.current) abortRef.current.abort();
     stopPolling();
+    setPendingFiles([]);
     if (activeId) {
       setConversations((prev) => prev.filter((c) => c.id !== activeId));
     }
     setActiveId(null);
     setStatus("idle");
   }
+
+  // --- Render ---
 
   return (
     <div className="flex h-[calc(100vh-5rem)] -m-8">
@@ -544,7 +696,21 @@ export default function ChatPage() {
       </div>
 
       {/* Chat area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div
+        className="flex-1 flex flex-col min-w-0 relative"
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+      >
+        {/* Drag overlay */}
+        {dragOver && (
+          <div className="absolute inset-0 z-50 bg-blue-600/20 border-2 border-dashed border-blue-400 rounded-xl flex items-center justify-center pointer-events-none">
+            <div className="bg-gray-900 px-6 py-4 rounded-xl text-blue-300 text-lg font-medium">
+              Drop files here
+            </div>
+          </div>
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-3 border-b border-gray-800 bg-gray-900/50">
           <div className="flex items-center gap-3">
@@ -604,6 +770,9 @@ export default function ChatPage() {
                   Tom is the master orchestrator. Ask him anything — he can
                   delegate to specialist agents.
                 </p>
+                <p className="text-xs text-gray-600 mt-2">
+                  You can also drag & drop files here
+                </p>
               </div>
             </div>
           )}
@@ -625,6 +794,45 @@ export default function ChatPage() {
                     <span className="font-medium">Tom</span>
                   </div>
                 )}
+
+                {/* File attachments */}
+                {msg.files && msg.files.length > 0 && (
+                  <div className="mb-2 space-y-2">
+                    {msg.files.map((f) => (
+                      <div key={f.id}>
+                        {f.type === "image" && f.previewUrl ? (
+                          <div className="rounded-lg overflow-hidden max-w-xs">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={f.previewUrl}
+                              alt={f.name}
+                              className="max-w-full max-h-48 rounded-lg"
+                            />
+                            <div className="text-xs opacity-70 mt-1">
+                              {f.name} ({formatSize(f.size)})
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 bg-black/20 rounded-lg px-3 py-2">
+                            <span className="text-lg">
+                              {FILE_ICON[f.type] || "📎"}
+                            </span>
+                            <div className="min-w-0">
+                              <div className="text-sm truncate">{f.name}</div>
+                              <div className="text-xs opacity-60">
+                                {formatSize(f.size)}
+                                {f.extractedText
+                                  ? " — content extracted"
+                                  : ""}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <div className="text-sm prose prose-invert prose-sm max-w-none [&_p]:mb-2 [&_p:last-child]:mb-0 [&_pre]:bg-gray-900 [&_pre]:p-3 [&_pre]:rounded-lg [&_code]:text-blue-300">
                   {msg.role === "assistant" ? (
                     msg.content ? (
@@ -646,9 +854,69 @@ export default function ChatPage() {
           <div ref={bottomRef} />
         </div>
 
+        {/* Pending files preview */}
+        {pendingFiles.length > 0 && (
+          <div className="px-6 py-2 border-t border-gray-800 bg-gray-900/30">
+            <div className="flex flex-wrap gap-2">
+              {pendingFiles.map((f) => (
+                <div
+                  key={f.id}
+                  className="flex items-center gap-2 bg-gray-800 rounded-lg px-3 py-1.5 text-sm group"
+                >
+                  {f.type === "image" && f.previewUrl ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={f.previewUrl}
+                      alt={f.name}
+                      className="w-8 h-8 rounded object-cover"
+                    />
+                  ) : (
+                    <span>{FILE_ICON[f.type] || "📎"}</span>
+                  )}
+                  <span className="truncate max-w-[120px] text-gray-300">
+                    {f.name}
+                  </span>
+                  <button
+                    onClick={() => removePendingFile(f.id)}
+                    className="text-gray-500 hover:text-red-400 transition-colors"
+                    title="Remove"
+                  >
+                    x
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Input */}
         <div className="px-6 py-4 border-t border-gray-800 bg-gray-900/50">
           <div className="flex gap-3 items-end">
+            {/* File upload button */}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading || status === "streaming"}
+              title="Attach files"
+              className="px-3 py-3 text-gray-400 hover:text-white hover:bg-gray-800 disabled:opacity-50 rounded-xl transition-colors"
+            >
+              {uploading ? (
+                <span className="inline-block w-5 h-5 border-2 border-gray-500 border-t-white rounded-full animate-spin" />
+              ) : (
+                <span className="text-lg">📎</span>
+              )}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept="image/*,.pdf,.xls,.xlsx,.csv,.txt,.json,.md,.xml,.html,.yml,.yaml,.log"
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files) handleFiles(e.target.files);
+                e.target.value = "";
+              }}
+            />
+
             <textarea
               ref={inputRef}
               value={input}
@@ -659,11 +927,30 @@ export default function ChatPage() {
                   sendMessage();
                 }
               }}
-              placeholder="Message Tom... (Enter to send, Shift+Enter for newline)"
+              onPaste={(e) => {
+                const items = e.clipboardData.items;
+                const files: File[] = [];
+                for (let i = 0; i < items.length; i++) {
+                  if (items[i].kind === "file") {
+                    const file = items[i].getAsFile();
+                    if (file) files.push(file);
+                  }
+                }
+                if (files.length > 0) {
+                  e.preventDefault();
+                  handleFiles(files);
+                }
+              }}
+              placeholder={
+                pendingFiles.length > 0
+                  ? "Add a message or just hit Send..."
+                  : "Message Tom... (Enter to send, Shift+Enter for newline)"
+              }
               rows={1}
               className="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-none max-h-32"
               style={{ minHeight: "48px" }}
             />
+
             {status === "streaming" || status === "waiting" ? (
               <button
                 onClick={stopGeneration}
@@ -674,7 +961,7 @@ export default function ChatPage() {
             ) : (
               <button
                 onClick={sendMessage}
-                disabled={!input.trim()}
+                disabled={!input.trim() && pendingFiles.length === 0}
                 className="px-5 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-xl font-medium transition-colors whitespace-nowrap"
               >
                 Send
@@ -683,6 +970,8 @@ export default function ChatPage() {
           </div>
         </div>
       </div>
+
+      {/* Hidden file input for programmatic trigger */}
     </div>
   );
 }
