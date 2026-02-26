@@ -1,6 +1,13 @@
 import { NextRequest } from "next/server";
 import { spawn } from "child_process";
-import { existsSync, readFileSync, readdirSync, statSync } from "fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from "fs";
 import { join } from "path";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -40,6 +47,44 @@ function getSessionFileById(agentId: string, sessionId: string): string | null {
   } catch { /* no sessions.json or parse error */ }
   // Fallback to latest
   return getLatestSessionFile(agentId);
+}
+
+/**
+ * Swap the agent:main:main session entry to point to a specific conversation's
+ * session file. The gateway always resolves CLI calls to agent:main:main, so we
+ * swap the entry before spawning to route to the right .jsonl transcript.
+ */
+function activateSession(agentId: string, sessionId: string): void {
+  const sessDir = join(AGENT_BASE, agentId, "sessions");
+  const sessJsonPath = join(sessDir, "sessions.json");
+  const sessionFile = join(sessDir, `${sessionId}.jsonl`);
+  const sessionKey = `agent:${agentId}:main`;
+
+  mkdirSync(sessDir, { recursive: true });
+
+  // Create empty session file if it doesn't exist
+  if (!existsSync(sessionFile)) {
+    writeFileSync(sessionFile, "", "utf8");
+  }
+
+  // Read current sessions.json
+  let store: Record<string, Record<string, unknown>> = {};
+  try {
+    store = JSON.parse(readFileSync(sessJsonPath, "utf8"));
+  } catch { /* missing or corrupt — start fresh */ }
+
+  // Copy existing entry fields (model, provider, skills, etc.) and swap the session
+  const existing = (store[sessionKey] ?? {}) as Record<string, unknown>;
+  store[sessionKey] = {
+    ...existing,
+    sessionId,
+    sessionFile,
+    updatedAt: Date.now(),
+    systemSent: false,
+    abortedLastRun: false,
+  };
+
+  writeFileSync(sessJsonPath, JSON.stringify(store, null, 2), "utf8");
 }
 
 function countFileLines(filePath: string): number {
@@ -98,6 +143,11 @@ export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     start(controller) {
+      // Activate the target session before spawning the CLI
+      if (sessionId) {
+        activateSession("main", sessionId);
+      }
+
       // Snapshot session line count BEFORE CLI starts
       const preSessionFile = sessionId
         ? getSessionFileById("main", sessionId)
