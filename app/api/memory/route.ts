@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { execFileSync } from "child_process";
+import { execFileSync, spawnSync } from "child_process";
 import { readdirSync, readFileSync, statSync, existsSync } from "fs";
 import { join } from "path";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -111,31 +111,68 @@ export async function GET(request: NextRequest) {
   // Strip fullContent from the response files (only used for search)
   const files = allFiles.map(({ fullContent, ...rest }) => rest);
 
+  const agentId = request.nextUrl.searchParams.get("agent")?.trim() || "main";
+
   if (query) {
-    // Try openclaw memory search first (FTS)
+    const safeQuery = query.replace(/[^a-zA-Z0-9 _\-.,!?']/g, "").slice(0, 200);
+    if (!safeQuery) {
+      return NextResponse.json({ results: [], files });
+    }
+
+    // Try QMD search first (semantic BM25 + vector)
     try {
-      const safeQuery = query.replace(/[^a-zA-Z0-9 _\-.,!?]/g, "").slice(0, 100);
-      if (safeQuery) {
-        const raw = execFileSync(
-          "openclaw",
-          ["memory", "search", safeQuery, "--json"],
-          {
-            encoding: "utf-8",
-            timeout: 10000,
-            env: { ...process.env, NO_COLOR: "1" },
+      const qmdHome = join(AGENTS_BASE, agentId, "qmd");
+      if (existsSync(qmdHome)) {
+        const r = spawnSync("/home/node/.bun/bin/qmd", ["search", safeQuery, "--json"], {
+          encoding: "utf-8",
+          timeout: 10000,
+          env: {
+            ...process.env,
+            XDG_CONFIG_HOME: join(qmdHome, "xdg-config"),
+            XDG_CACHE_HOME: join(qmdHome, "xdg-cache"),
+            NO_COLOR: "1",
+          },
+        });
+        if (r.status === 0 && r.stdout) {
+          const qmdResults = JSON.parse(r.stdout);
+          if (Array.isArray(qmdResults) && qmdResults.length > 0) {
+            const mapped = qmdResults.map((hit: Record<string, unknown>) => ({
+              agent: agentId,
+              file: String(hit.file || "").replace(/^qmd:\/\/[^/]+\//, ""),
+              text: String(hit.snippet || ""),
+              score: Number(hit.score ?? 0),
+              title: String(hit.title || ""),
+              source: "qmd" as const,
+            }));
+            return NextResponse.json({ results: mapped, files, backend: "qmd" });
           }
-        );
-        const data = JSON.parse(raw);
-        const cliResults = data.results || data.chunks || [];
-        if (cliResults.length > 0) {
-          return NextResponse.json({ results: cliResults, files });
         }
+      }
+    } catch {
+      // QMD search failed, fall through
+    }
+
+    // Try openclaw memory search (FTS)
+    try {
+      const raw = execFileSync(
+        "openclaw",
+        ["memory", "search", safeQuery, "--json"],
+        {
+          encoding: "utf-8",
+          timeout: 10000,
+          env: { ...process.env, NO_COLOR: "1" },
+        }
+      );
+      const data = JSON.parse(raw);
+      const cliResults = data.results || data.chunks || [];
+      if (cliResults.length > 0) {
+        return NextResponse.json({ results: cliResults, files, backend: "fts" });
       }
     } catch {
       // CLI search failed, fall through to local search
     }
 
-    // Fallback: search full file content (not just 200-char preview)
+    // Fallback: local text search
     const lowerQ = query.toLowerCase();
     const filtered = allFiles
       .filter(
@@ -144,7 +181,6 @@ export async function GET(request: NextRequest) {
           f.fullContent.toLowerCase().includes(lowerQ)
       )
       .map((f) => {
-        // Extract a relevant snippet around the match
         const idx = f.fullContent.toLowerCase().indexOf(lowerQ);
         const start = Math.max(0, idx - 80);
         const end = Math.min(f.fullContent.length, idx + query.length + 200);
@@ -154,9 +190,10 @@ export async function GET(request: NextRequest) {
           file: f.file,
           text: snippet,
           preview: snippet,
+          source: "local" as const,
         };
       });
-    return NextResponse.json({ results: filtered, files });
+    return NextResponse.json({ results: filtered, files, backend: "local" });
   }
 
   return NextResponse.json({ results: [], files });
