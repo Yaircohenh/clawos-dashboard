@@ -69,9 +69,9 @@ export async function POST(request: NextRequest) {
   }
 
   const message = typeof body.message === "string" ? body.message.trim() : "";
-  if (!message || message.length > 10000) {
+  if (!message || message.length > 100000) {
     return new Response(
-      JSON.stringify({ error: "Message required (max 10000 chars)" }),
+      JSON.stringify({ error: "Message required (max 100000 chars)" }),
       { status: 400, headers: { "Content-Type": "application/json" } }
     );
   }
