@@ -14,6 +14,7 @@ const navItems = [
   { href: "/skills", label: "Skills", icon: "🧩" },
   { href: "/plugins", label: "Plugins", icon: "🔌" },
   { href: "/jobs", label: "Jobs", icon: "⏰" },
+  { href: "/ralhp", label: "Projects", icon: "🏗️" },
   { href: "/approvals", label: "Approvals", icon: "✅" },
   { href: "/memory", label: "Memory", icon: "🧠" },
   { href: "/channels", label: "Channels", icon: "📡" },

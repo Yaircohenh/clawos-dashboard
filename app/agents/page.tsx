@@ -19,6 +19,49 @@ interface AgentScore {
   avg_cycles: number;
   streak: number;
   last_updated: string | null;
+  history: { ts: string; delta: number }[];
+}
+
+function ScoreSparkline({ history }: { history: { ts: string; delta: number }[] }) {
+  if (!history || history.length === 0) return null;
+
+  const recent = history.slice(-10);
+  // Build cumulative scores from deltas
+  const points: number[] = [];
+  let cumulative = 0;
+  for (const entry of recent) {
+    cumulative += entry.delta;
+    points.push(cumulative);
+  }
+
+  const min = Math.min(...points);
+  const max = Math.max(...points);
+  const range = max - min || 1;
+  const width = 60;
+  const height = 20;
+  const padding = 2;
+
+  const coords = points.map((val, i) => {
+    const x = points.length === 1 ? width / 2 : (i / (points.length - 1)) * (width - padding * 2) + padding;
+    const y = height - padding - ((val - min) / range) * (height - padding * 2);
+    return `${x},${y}`;
+  });
+
+  const netDelta = cumulative;
+  const color = netDelta > 0 ? "#22c55e" : netDelta < 0 ? "#ef4444" : "#6b7280";
+
+  return (
+    <svg width={width} height={height} className="inline-block ml-2">
+      <polyline
+        points={coords.join(" ")}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
 
 const AVAILABLE_MODELS = [
@@ -307,6 +350,7 @@ export default function AgentsPage() {
                     <span className={`text-sm font-bold ${scores[agent.id].score >= 80 ? "text-green-400" : scores[agent.id].score >= 60 ? "text-yellow-400" : scores[agent.id].score >= 50 ? "text-orange-400" : "text-red-400"}`}>
                       {scores[agent.id].score}
                     </span>
+                    <ScoreSparkline history={scores[agent.id].history} />
                     {scores[agent.id].streak !== 0 && (
                       <span className={`text-xs ${scores[agent.id].streak > 0 ? "text-green-500" : "text-red-500"}`}>
                         {scores[agent.id].streak > 0 ? "+" : ""}{scores[agent.id].streak} streak
