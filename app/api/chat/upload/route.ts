@@ -7,6 +7,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 export const dynamic = "force-dynamic";
 
 const UPLOAD_DIR = "/tmp/clawos-uploads";
+const INBOX_DIR = "/home/node/Inbox";
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 const TEXT_EXTENSIONS = new Set([
@@ -44,57 +45,16 @@ function getExtension(name: string): string {
 }
 
 function extractPdfText(filePath: string): string {
-  // Use python to extract basic PDF text (no external deps needed)
   try {
     const script = `
 import sys
-try:
-    with open(sys.argv[1], 'rb') as f:
-        data = f.read()
-    # Simple PDF text extraction: find text between BT/ET blocks
-    # This is basic but works for many PDFs without external libs
-    text_parts = []
-    i = 0
-    while i < len(data):
-        # Look for text objects
-        idx = data.find(b'(', i)
-        if idx == -1:
-            break
-        # Find matching close paren (handle escapes)
-        j = idx + 1
-        depth = 1
-        while j < len(data) and depth > 0:
-            if data[j:j+1] == b'\\\\':
-                j += 2
-                continue
-            if data[j:j+1] == b'(':
-                depth += 1
-            elif data[j:j+1] == b')':
-                depth -= 1
-            j += 1
-        if depth == 0:
-            try:
-                chunk = data[idx+1:j-1].decode('latin-1')
-                # Filter for readable text
-                readable = ''.join(c if c.isprintable() or c in '\\n\\r\\t' else ' ' for c in chunk)
-                readable = readable.strip()
-                if len(readable) > 2:
-                    text_parts.append(readable)
-            except:
-                pass
-        i = j
-    result = ' '.join(text_parts)
-    # Clean up excessive whitespace
-    import re
-    result = re.sub(r'\\s+', ' ', result).strip()
-    print(result[:50000])  # Cap at 50k chars
-except Exception as e:
-    print(f"Error: {e}", file=sys.stderr)
-    sys.exit(1)
+from pdfminer.high_level import extract_text
+text = extract_text(sys.argv[1])
+print(text[:50000])
 `;
     const result = execFileSync("python3", ["-c", script, filePath], {
       encoding: "utf-8",
-      timeout: 15000,
+      timeout: 30000,
     });
     return result.trim();
   } catch {
@@ -159,10 +119,16 @@ export async function POST(request: NextRequest) {
     if (!existsSync(UPLOAD_DIR)) {
       mkdirSync(UPLOAD_DIR, { recursive: true });
     }
+    if (!existsSync(INBOX_DIR)) {
+      mkdirSync(INBOX_DIR, { recursive: true });
+    }
 
     const filePath = join(UPLOAD_DIR, fileName);
+    const inboxPath = join(INBOX_DIR, fileName);
     const buffer = Buffer.from(await file.arrayBuffer());
     writeFileSync(filePath, buffer);
+    // Also copy to ~/Inbox so Tom can access it directly
+    writeFileSync(inboxPath, buffer);
 
     const ext = getExtension(file.name);
     let extractedText = "";
@@ -189,7 +155,7 @@ export async function POST(request: NextRequest) {
       id,
       name: file.name,
       fileName,
-      path: filePath,
+      path: inboxPath,
       size: file.size,
       type: fileType,
       mimeType: file.type,
