@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readFileSync, readdirSync, statSync } from "fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -23,6 +23,21 @@ function getLatestSessionFile(agentId: string): string | null {
   }
 }
 
+function getSessionFileById(agentId: string, sessionId: string): string | null {
+  const sessDir = join(AGENT_BASE, agentId, "sessions");
+  const direct = join(sessDir, `${sessionId}.jsonl`);
+  if (existsSync(direct)) return direct;
+  try {
+    const meta = JSON.parse(readFileSync(join(sessDir, "sessions.json"), "utf8"));
+    for (const entry of Object.values(meta) as Record<string, unknown>[]) {
+      if (entry.sessionId === sessionId && typeof entry.sessionFile === "string") {
+        return entry.sessionFile;
+      }
+    }
+  } catch { /* no sessions.json or parse error */ }
+  return getLatestSessionFile(agentId);
+}
+
 /**
  * GET /api/chat/latest
  *
@@ -37,7 +52,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Rate limited" }, { status: 429 });
   }
 
-  const sessionFile = getLatestSessionFile("main");
+  const url = new URL(request.url);
+  const sessionId = url.searchParams.get("sessionId") || "";
+
+  const sessionFile = sessionId
+    ? getSessionFileById("main", sessionId)
+    : getLatestSessionFile("main");
   if (!sessionFile) {
     return NextResponse.json({ userMessage: null, responses: [] });
   }

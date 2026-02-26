@@ -27,6 +27,7 @@ interface Conversation {
   title: string;
   messages: Message[];
   createdAt: Date;
+  sessionId: string;
 }
 
 type ConnectionStatus = "idle" | "streaming" | "waiting" | "error";
@@ -46,6 +47,7 @@ interface StoredConversation {
   title: string;
   messages: StoredMessage[];
   createdAt: string;
+  sessionId: string;
 }
 
 function saveToStorage(conversations: Conversation[]) {
@@ -63,6 +65,7 @@ function saveToStorage(conversations: Conversation[]) {
           files: m.files?.map((f) => ({ ...f, previewUrl: undefined })),
         })),
         createdAt: c.createdAt.toISOString(),
+        sessionId: c.sessionId,
       }));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(serialized));
   } catch {
@@ -89,6 +92,7 @@ function loadFromStorage(): {
         files: m.files,
       })),
       createdAt: new Date(c.createdAt),
+      sessionId: c.sessionId || crypto.randomUUID(),
     }));
     return {
       conversations,
@@ -193,7 +197,8 @@ export default function ChatPage() {
   function startFollowUpPolling(
     convId: string,
     msgId: string,
-    baseline: number
+    baseline: number,
+    sessionId: string
   ) {
     stopPolling();
     setStatus("waiting");
@@ -217,7 +222,7 @@ export default function ChatPage() {
 
       try {
         const res = await fetch(
-          `/api/chat/follow-ups?baseline=${currentBaseline}`
+          `/api/chat/follow-ups?baseline=${currentBaseline}&sessionId=${encodeURIComponent(sessionId)}`
         );
         if (!res.ok) return;
         const data = await res.json();
@@ -362,6 +367,7 @@ export default function ChatPage() {
       title: "New conversation",
       messages: [],
       createdAt: new Date(),
+      sessionId: crypto.randomUUID(),
     };
     setConversations((prev) => [conv, ...prev]);
     setActiveId(conv.id);
@@ -382,15 +388,19 @@ export default function ChatPage() {
     stopPolling();
 
     let convId = activeId;
+    let convSessionId = activeConversation?.sessionId;
     if (!convId) {
+      const newSessionId = crypto.randomUUID();
       const conv: Conversation = {
         id: crypto.randomUUID(),
         title: (text || files[0]?.name || "File").slice(0, 40),
         messages: [],
         createdAt: new Date(),
+        sessionId: newSessionId,
       };
       setConversations((prev) => [conv, ...prev]);
       convId = conv.id;
+      convSessionId = newSessionId;
       setActiveId(convId);
     }
 
@@ -437,7 +447,7 @@ export default function ChatPage() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: fullMessage }),
+        body: JSON.stringify({ message: fullMessage, sessionId: convSessionId }),
         signal: controller.signal,
       });
 
@@ -522,7 +532,7 @@ export default function ChatPage() {
       }
 
       if (spawned && baseline > 0) {
-        startFollowUpPolling(convId!, assistantMsg.id, baseline);
+        startFollowUpPolling(convId!, assistantMsg.id, baseline, convSessionId!);
       } else {
         setStatus("idle");
       }
@@ -582,7 +592,10 @@ export default function ChatPage() {
   async function refreshFromSession() {
     if (status === "streaming") return;
     try {
-      const res = await fetch("/api/chat/latest");
+      const params = activeConversation?.sessionId
+        ? `?sessionId=${encodeURIComponent(activeConversation.sessionId)}`
+        : "";
+      const res = await fetch(`/api/chat/latest${params}`);
       if (!res.ok) return;
       const data = await res.json();
       if (!data.userMessage || data.responses.length === 0) return;
@@ -624,6 +637,7 @@ export default function ChatPage() {
             },
           ],
           createdAt: new Date(),
+          sessionId: crypto.randomUUID(),
         };
         setConversations((prev) => [conv, ...prev]);
         setActiveId(conv.id);

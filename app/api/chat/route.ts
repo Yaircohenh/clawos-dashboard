@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { spawn } from "child_process";
-import { readFileSync, readdirSync, statSync } from "fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 import { checkRateLimit } from "@/lib/rate-limit";
 
@@ -22,6 +22,24 @@ function getLatestSessionFile(agentId: string): string | null {
   } catch {
     return null;
   }
+}
+
+function getSessionFileById(agentId: string, sessionId: string): string | null {
+  const sessDir = join(AGENT_BASE, agentId, "sessions");
+  // Direct match: {sessionId}.jsonl
+  const direct = join(sessDir, `${sessionId}.jsonl`);
+  if (existsSync(direct)) return direct;
+  // Check sessions.json mapping
+  try {
+    const meta = JSON.parse(readFileSync(join(sessDir, "sessions.json"), "utf8"));
+    for (const entry of Object.values(meta) as Record<string, unknown>[]) {
+      if (entry.sessionId === sessionId && typeof entry.sessionFile === "string") {
+        return entry.sessionFile;
+      }
+    }
+  } catch { /* no sessions.json or parse error */ }
+  // Fallback to latest
+  return getLatestSessionFile(agentId);
 }
 
 function countFileLines(filePath: string): number {
@@ -58,7 +76,7 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  let body: { message?: string };
+  let body: { message?: string; sessionId?: string };
   try {
     body = await request.json();
   } catch {
@@ -69,6 +87,7 @@ export async function POST(request: NextRequest) {
   }
 
   const message = typeof body.message === "string" ? body.message.trim() : "";
+  const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
   if (!message || message.length > 100000) {
     return new Response(
       JSON.stringify({ error: "Message required (max 100000 chars)" }),
@@ -80,14 +99,20 @@ export async function POST(request: NextRequest) {
   const stream = new ReadableStream({
     start(controller) {
       // Snapshot session line count BEFORE CLI starts
-      const preSessionFile = getLatestSessionFile("main");
+      const preSessionFile = sessionId
+        ? getSessionFileById("main", sessionId)
+        : getLatestSessionFile("main");
       const preBaseline = preSessionFile ? countFileLines(preSessionFile) : 0;
 
-      const proc = spawn(
-        "openclaw",
-        ["agent", "--agent", "main", "--message", message],
-        { env: { ...process.env, NO_COLOR: "1" }, timeout: 120000 }
-      );
+      const args = ["agent", "--agent", "main", "--message", message];
+      if (sessionId) {
+        args.push("--session-id", sessionId);
+      }
+
+      const proc = spawn("openclaw", args, {
+        env: { ...process.env, NO_COLOR: "1" },
+        timeout: 120000,
+      });
 
       let output = "";
 
@@ -114,7 +139,9 @@ export async function POST(request: NextRequest) {
 
       proc.on("close", (code) => {
         // Check if Tom spawned subagents during THIS request
-        const sessionFile = getLatestSessionFile("main");
+        const sessionFile = sessionId
+          ? getSessionFileById("main", sessionId)
+          : getLatestSessionFile("main");
         let spawned = false;
         let baseline = 0;
 
