@@ -12,6 +12,15 @@ interface Agent {
   status: "active" | "idle" | "error";
 }
 
+interface AgentScore {
+  score: number;
+  completed: number;
+  failed: number;
+  avg_cycles: number;
+  streak: number;
+  last_updated: string | null;
+}
+
 const AVAILABLE_MODELS = [
   { id: "anthropic/claude-sonnet-4-6", label: "Claude Sonnet 4.6", provider: "Anthropic" },
   { id: "anthropic/claude-opus-4-6", label: "Claude Opus 4.6", provider: "Anthropic" },
@@ -31,6 +40,7 @@ export default function AgentsPage() {
   const [agentFiles, setAgentFiles] = useState<{ name: string; size: number }[]>([]);
   const [editingFile, setEditingFile] = useState<{ name: string; content: string } | null>(null);
   const [inlineEdit, setInlineEdit] = useState<{ agentId: string; field: "name" | "emoji"; value: string } | null>(null);
+  const [scores, setScores] = useState<Record<string, AgentScore>>({});
 
   const fetchAgents = useCallback(async () => {
     try {
@@ -46,7 +56,14 @@ export default function AgentsPage() {
     } catch { /* retry */ } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchAgents(); }, [fetchAgents]);
+  const fetchScores = useCallback(async () => {
+    try {
+      const res = await fetch("/api/scores");
+      if (res.ok) setScores(await res.json());
+    } catch { /* scores are optional */ }
+  }, []);
+
+  useEffect(() => { fetchAgents(); fetchScores(); }, [fetchAgents, fetchScores]);
 
   async function handleModelChange(agentId: string, model: string) {
     const res = await fetch("/api/agents", {
@@ -280,6 +297,35 @@ export default function AgentsPage() {
                 {agent.status}
               </span>
             </div>
+
+            {/* Agent Score */}
+            {scores[agent.id] && (
+              <div className="mb-3 px-3 py-2 bg-gray-800/50 rounded-lg">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs text-gray-400">Score</span>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-sm font-bold ${scores[agent.id].score >= 80 ? "text-green-400" : scores[agent.id].score >= 60 ? "text-yellow-400" : scores[agent.id].score >= 50 ? "text-orange-400" : "text-red-400"}`}>
+                      {scores[agent.id].score}
+                    </span>
+                    {scores[agent.id].streak !== 0 && (
+                      <span className={`text-xs ${scores[agent.id].streak > 0 ? "text-green-500" : "text-red-500"}`}>
+                        {scores[agent.id].streak > 0 ? "+" : ""}{scores[agent.id].streak} streak
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div className="w-full h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${scores[agent.id].score >= 80 ? "bg-green-500" : scores[agent.id].score >= 60 ? "bg-yellow-500" : scores[agent.id].score >= 50 ? "bg-orange-500" : "bg-red-500"}`}
+                    style={{ width: `${scores[agent.id].score}%` }}
+                  />
+                </div>
+                <div className="flex items-center justify-between mt-1.5 text-xs text-gray-500">
+                  <span>{scores[agent.id].completed} done · {scores[agent.id].failed} failed</span>
+                  {scores[agent.id].avg_cycles > 0 && <span>avg {scores[agent.id].avg_cycles} cycles</span>}
+                </div>
+              </div>
+            )}
 
             {/* Model selector with dropdown indicator */}
             <div className="mb-3">
