@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from "child_process";
 import { readdirSync, readFileSync, statSync, existsSync } from "fs";
 import { join } from "path";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { workspaceDir, agentsRuntimeDir, qmdBin } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
@@ -11,8 +12,8 @@ export const dynamic = "force-dynamic";
 // Sub-agents: ~/.openclaw/workspace/workspace/<agentId>/  (.md files)
 // Memory subdirs: ~/.openclaw/workspace/workspace/<agentId>/memory/
 // Legacy: ~/.openclaw/agents/<agentId>/memory/
-const WORKSPACE_BASE = "/home/node/.openclaw/workspace";
-const AGENTS_BASE = "/home/node/.openclaw/agents";
+const WORKSPACE_BASE = workspaceDir();
+const AGENTS_BASE = agentsRuntimeDir();
 
 function scanDir(dir: string, agentId: string, results: MemoryFile[]) {
   try {
@@ -123,7 +124,7 @@ export async function GET(request: NextRequest) {
     try {
       const qmdHome = join(AGENTS_BASE, agentId, "qmd");
       if (existsSync(qmdHome)) {
-        const r = spawnSync("/home/node/.bun/bin/qmd", ["search", safeQuery, "--json"], {
+        const r = spawnSync(qmdBin(), ["search", safeQuery, "--json"], {
           encoding: "utf-8",
           timeout: 10000,
           env: {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { execFileSync } from "child_process";
 import { readFileSync, writeFileSync, mkdirSync, cpSync, rmSync } from "fs";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { openclawConfigPath, agentDir, agentsBackupDir } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
@@ -10,13 +11,13 @@ const SAFE_ID = /^[a-zA-Z0-9._\-/]+$/;
 
 function readConfig() {
   return JSON.parse(
-    readFileSync("/home/node/.openclaw/openclaw.json", "utf-8")
+    readFileSync(openclawConfigPath(), "utf-8")
   );
 }
 
 function writeConfig(config: Record<string, unknown>) {
   writeFileSync(
-    "/home/node/.openclaw/openclaw.json",
+    openclawConfigPath(),
     JSON.stringify(config, null, 2) + "\n",
     "utf-8"
   );
@@ -63,9 +64,9 @@ export async function POST(request: NextRequest) {
       });
       writeConfig(config);
       // Create agent directory
-      const agentDir = `/home/node/.openclaw/agents/${id}`;
-      mkdirSync(`${agentDir}/prompts`, { recursive: true });
-      writeFileSync(`${agentDir}/prompts/system.md`, `# ${body.name || id}\n\nYou are ${body.name || id}, a specialist agent.\n`, "utf-8");
+      const newAgentDir = agentDir(id);
+      mkdirSync(`${newAgentDir}/prompts`, { recursive: true });
+      writeFileSync(`${newAgentDir}/prompts/system.md`, `# ${body.name || id}\n\nYou are ${body.name || id}, a specialist agent.\n`, "utf-8");
       return NextResponse.json({ success: true });
     } catch (err: unknown) {
       return NextResponse.json({ error: err instanceof Error ? err.message : "Failed" }, { status: 500 });
@@ -161,8 +162,8 @@ export async function POST(request: NextRequest) {
 
         // Backup if requested
         if (backup) {
-          const src = `/home/node/.openclaw/agents/${agentId}`;
-          const dst = `/home/node/.openclaw/agents-backup/${agentId}-${Date.now()}`;
+          const src = agentDir(agentId);
+          const dst = `${agentsBackupDir()}/${agentId}-${Date.now()}`;
           try {
             mkdirSync(dst, { recursive: true });
             cpSync(src, dst, { recursive: true });
@@ -177,7 +178,7 @@ export async function POST(request: NextRequest) {
 
         // Remove agent directory if not backing up
         if (!backup) {
-          try { rmSync(`/home/node/.openclaw/agents/${agentId}`, { recursive: true, force: true }); } catch { /* ok */ }
+          try { rmSync(agentDir(agentId), { recursive: true, force: true }); } catch { /* ok */ }
         }
 
         return NextResponse.json({ success: true });

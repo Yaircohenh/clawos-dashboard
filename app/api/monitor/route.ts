@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { readFileSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { agentsRuntimeDir, openclawConfigPath } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,7 @@ interface AgentActivity {
   lines: { type: string; text: string; timestamp?: string }[];
 }
 
-const AGENT_BASE = "/home/node/.openclaw/agents";
+const AGENT_BASE = agentsRuntimeDir();
 
 function getAgentInfo(): {
   id: string;
@@ -24,7 +25,7 @@ function getAgentInfo(): {
 }[] {
   try {
     const config = JSON.parse(
-      readFileSync("/home/node/.openclaw/openclaw.json", "utf-8")
+      readFileSync(openclawConfigPath(), "utf-8")
     );
     return (config?.agents?.list || []).map((a: Record<string, unknown>) => ({
       id: a.id as string,

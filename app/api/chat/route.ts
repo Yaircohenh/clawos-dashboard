@@ -10,10 +10,11 @@ import {
 } from "fs";
 import { join } from "path";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { agentsRuntimeDir } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
-const AGENT_BASE = "/home/node/.openclaw/agents";
+const AGENT_BASE = agentsRuntimeDir();
 
 function getLatestSessionFile(agentId: string): string | null {
   try {

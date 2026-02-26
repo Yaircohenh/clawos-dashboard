@@ -3,6 +3,7 @@ import { readdirSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 import { execFileSync } from "child_process";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { logsDir, agentsRuntimeDir } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ function getLogEntries(limit: number = 100): LogEntry[] {
 
   // 1. Read gateway log files
   try {
-    const logDir = "/home/node/.openclaw/logs";
+    const logDir = logsDir();
     const logFiles = readdirSync(logDir)
       .filter(f => f.endsWith(".log"))
       .map(f => join(logDir, f));
@@ -43,7 +44,7 @@ function getLogEntries(limit: number = 100): LogEntry[] {
 
   // 2. Read recent session activity as log entries
   try {
-    const agentBase = "/home/node/.openclaw/agents";
+    const agentBase = agentsRuntimeDir();
     const agents = readdirSync(agentBase);
     for (const agentId of agents) {
       const sessDir = join(agentBase, agentId, "sessions");

@@ -4,11 +4,12 @@ import { join } from "path";
 import { execFileSync } from "child_process";
 import { maskSecret } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { agentsRuntimeDir, openclawConfigPath, envFilePath } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
-const AGENT_BASE = "/home/node/.openclaw/agents";
-const CONFIG_PATH = "/home/node/.openclaw/openclaw.json";
+const AGENT_BASE = agentsRuntimeDir();
+const CONFIG_PATH = openclawConfigPath();
 
 interface KeyInfo {
   id: string;
@@ -261,7 +262,7 @@ export async function POST(request: NextRequest) {
 
     if (type === "env") {
       // Write to .env.local file for the dashboard process
-      const envPath = "/workspace/clawos-dashboard/.env.local";
+      const envPath = envFilePath();
       try {
         let envContent = "";
         try { envContent = readFileSync(envPath, "utf-8"); } catch { /* file may not exist */ }
@@ -286,12 +287,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid key name" }, { status: 400 });
     }
 
-    const envPath = "/workspace/clawos-dashboard/.env.local";
+    const removeEnvPath = envFilePath();
     try {
       let envContent = "";
-      try { envContent = readFileSync(envPath, "utf-8"); } catch { /* ok */ }
+      try { envContent = readFileSync(removeEnvPath, "utf-8"); } catch { /* ok */ }
       const lines = envContent.split("\n").filter(l => !l.startsWith(`${name}=`));
-      writeFileSync(envPath, lines.filter(l => l.trim()).join("\n") + "\n");
+      writeFileSync(removeEnvPath, lines.filter(l => l.trim()).join("\n") + "\n");
       delete process.env[name];
       return NextResponse.json({ success: true });
     } catch (err: unknown) {

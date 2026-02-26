@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getCostSummary, getSessions, getAgents } from "@/lib/data";
+import { costLimitsPath } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
-const LIMITS_PATH = "/home/node/.openclaw/cost-limits.json";
+const LIMITS_PATH = costLimitsPath();
 
 function readLimits(): Record<string, number> {
   try {

@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFileSync, writeFileSync } from "fs";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getCronJobs, getAgents } from "@/lib/data";
+import { cronJobsPath } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
 const SAFE_ID = /^[a-zA-Z0-9_\-]+$/;
-const JOBS_PATH = "/workspace/cron/jobs.json";
+const JOBS_PATH = cronJobsPath();
 
 export async function GET(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for") || "127.0.0.1";

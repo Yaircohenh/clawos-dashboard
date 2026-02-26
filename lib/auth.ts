@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { readFileSync } from "fs";
+import { openclawConfigPath } from "@/lib/paths";
 
 const SESSION_COOKIE = "clawos_session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
@@ -11,7 +12,7 @@ function getDashboardPassword(): string {
   }
   try {
     const config = JSON.parse(
-      readFileSync("/home/node/.openclaw/openclaw.json", "utf-8")
+      readFileSync(openclawConfigPath(), "utf-8")
     );
     return config.dashboard?.password || "clawos";
   } catch {

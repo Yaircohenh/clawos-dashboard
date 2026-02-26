@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { openclawConfigPath, dashboardModelsPath } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
-const CONFIG_PATH = "/home/node/.openclaw/openclaw.json";
-const MODELS_PATH = "/home/node/.openclaw/dashboard-models.json";
+const CONFIG_PATH = openclawConfigPath();
+const MODELS_PATH = dashboardModelsPath();
 
 function readConfig(): Record<string, any> {
   try {

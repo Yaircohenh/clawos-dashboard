@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFileSync, writeFileSync, readdirSync } from "fs";
 import { join } from "path";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { infraWorkspaceDir, infraAgentsDir } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
 const SAFE_ID = /^[a-zA-Z0-9_\-]+$/;
 const SAFE_FILENAME = /^[a-zA-Z0-9_\-.]+\.md$/;
-const WORKSPACE_BASE = "/workspace/workspace";
-const AGENT_CONFIG_BASE = "/workspace/agents";
+const WORKSPACE_BASE = infraWorkspaceDir();
+const AGENT_CONFIG_BASE = infraAgentsDir();
 
 function getAgentMdFiles(agentId: string): { name: string; path: string; content: string }[] {
   const files: { name: string; path: string; content: string }[] = [];

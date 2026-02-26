@@ -1,5 +1,6 @@
 import { execFileSync } from "child_process";
 import { readFileSync } from "fs";
+import { openclawConfigPath, securityPolicyPath, cronJobsPath } from "@/lib/paths";
 
 export interface Agent {
   id: string;
@@ -66,7 +67,7 @@ function readJsonFile(path: string): string {
 
 export function getAgents(): Agent[] {
   const config = JSON.parse(
-    readJsonFile("/home/node/.openclaw/openclaw.json") || "{}"
+    readJsonFile(openclawConfigPath()) || "{}"
   );
   const agents = config?.agents?.list || [];
   return agents.map((a: any) => ({
@@ -121,7 +122,7 @@ export function getMemoryStatus(): MemoryStatus[] {
 
 export function getSecurityPolicy(): SecurityRule[] {
   try {
-    const raw = readJsonFile("/workspace/workspace/security-policy.json");
+    const raw = readJsonFile(securityPolicyPath());
     const policy = JSON.parse(raw);
     return (policy.rules || []).map((r: any) => ({
       id: r.id,
@@ -329,7 +330,7 @@ export function getCronJobs(): CronJob[] {
   }
   // Fallback: read local jobs.json directly (no shell)
   try {
-    const local = readJsonFile("/workspace/cron/jobs.json");
+    const local = readJsonFile(cronJobsPath());
     const data = JSON.parse(local);
     return (data.jobs || []).map((j: any) => ({
       id: j.id || "",

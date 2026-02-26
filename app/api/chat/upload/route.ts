@@ -3,11 +3,12 @@ import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { execFileSync } from "child_process";
 import { join } from "path";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { uploadDir as getUploadDir, inboxDir as getInboxDir } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
-const UPLOAD_DIR = "/tmp/clawos-uploads";
-const INBOX_DIR = "/home/node/Inbox";
+const UPLOAD_DIR = getUploadDir();
+const INBOX_DIR = getInboxDir();
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
 const TEXT_EXTENSIONS = new Set([

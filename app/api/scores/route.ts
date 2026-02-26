@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { readFileSync } from "fs";
+import { agentScoresPath } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
-const SCORES_PATH = "/workspace/memory/agent-scores.json";
+const SCORES_PATH = agentScoresPath();
 
 export async function GET() {
   try {

@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFileSync, writeFileSync } from "fs";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { getSecurityPolicy } from "@/lib/data";
+import { securityPolicyPath } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
-const POLICY_PATH = "/workspace/workspace/security-policy.json";
+const POLICY_PATH = securityPolicyPath();
 
 export async function GET(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for") || "127.0.0.1";

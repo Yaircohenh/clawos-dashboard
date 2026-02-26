@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { execFileSync } from "child_process";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { openclawConfigPath } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
-const CONFIG_PATH = "/home/node/.openclaw/openclaw.json";
+const CONFIG_PATH = openclawConfigPath();
 
 interface ChannelConfig {
   id: string;

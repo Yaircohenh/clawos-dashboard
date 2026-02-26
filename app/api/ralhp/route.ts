@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { readdirSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { ralhpProjectsDir } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
-const PROJECTS_DIR = "/workspace/workspace/ops/projects";
+const PROJECTS_DIR = ralhpProjectsDir();
 
 interface Step {
   id: string;
