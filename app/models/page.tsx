@@ -11,10 +11,10 @@ interface ModelInfo {
 }
 
 const COMMON_MODELS = [
-  { provider: "Anthropic", models: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"], link: "https://console.anthropic.com", linkLabel: "console.anthropic.com" },
-  { provider: "OpenAI", models: ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"], link: "https://platform.openai.com/api-keys", linkLabel: "platform.openai.com/api-keys" },
-  { provider: "xAI", models: ["grok-4-1-fast", "grok-3"], link: "https://console.x.ai", linkLabel: "console.x.ai" },
-  { provider: "Google", models: ["gemini-2.5-pro", "gemini-2.5-flash"], link: "https://aistudio.google.com/app/apikey", linkLabel: "aistudio.google.com/app/apikey" },
+  { provider: "Anthropic", prefix: "anthropic", models: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"], link: "https://console.anthropic.com", linkLabel: "console.anthropic.com" },
+  { provider: "OpenAI", prefix: "openai", models: ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"], link: "https://platform.openai.com/api-keys", linkLabel: "platform.openai.com/api-keys" },
+  { provider: "xAI", prefix: "xai", models: ["grok-4-1-fast", "grok-3"], link: "https://console.x.ai", linkLabel: "console.x.ai" },
+  { provider: "Google", prefix: "google", models: ["gemini-2.5-pro", "gemini-2.5-flash"], link: "https://aistudio.google.com/app/apikey", linkLabel: "aistudio.google.com/app/apikey" },
 ];
 
 export default function ModelsPage() {
@@ -182,7 +182,7 @@ export default function ModelsPage() {
             value={newModelId}
             onChange={(e) => setNewModelId(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && addModel()}
-            placeholder="Model ID (e.g. claude-sonnet-4-6)"
+            placeholder="Model ID (e.g. anthropic/claude-sonnet-4-6)"
             className="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500"
           />
           <button
@@ -236,9 +236,9 @@ export default function ModelsPage() {
               <div className="space-y-1">
                 {group.models.map((modelId) => (
                   <div key={modelId} className="flex items-center justify-between">
-                    <code className="text-xs text-gray-300">{modelId}</code>
+                    <code className="text-xs text-gray-300">{group.prefix}/{modelId}</code>
                     <button
-                      onClick={() => { setNewModelId(modelId); }}
+                      onClick={() => { setNewModelId(`${group.prefix}/${modelId}`); }}
                       className="text-xs text-gray-500 hover:text-blue-400 transition-colors"
                     >
                       Use

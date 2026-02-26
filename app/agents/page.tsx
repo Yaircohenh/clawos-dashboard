@@ -13,10 +13,10 @@ interface Agent {
 }
 
 const AVAILABLE_MODELS = [
-  "claude-sonnet-4-6",
-  "claude-opus-4-6",
-  "claude-haiku-4-5-20251001",
-  "grok-4-1-fast",
+  { id: "anthropic/claude-sonnet-4-6", label: "Claude Sonnet 4.6", provider: "Anthropic" },
+  { id: "anthropic/claude-opus-4-6", label: "Claude Opus 4.6", provider: "Anthropic" },
+  { id: "anthropic/claude-haiku-4-5-20251001", label: "Claude Haiku 4.5", provider: "Anthropic" },
+  { id: "xai/grok-4-1-fast", label: "Grok 4.1 Fast", provider: "xAI" },
 ];
 
 export default function AgentsPage() {
@@ -25,7 +25,7 @@ export default function AgentsPage() {
   const [editingAgent, setEditingAgent] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ name: "", emoji: "", workspace: "" });
   const [showAddForm, setShowAddForm] = useState(false);
-  const [addForm, setAddForm] = useState({ id: "", name: "", emoji: "🤖", model: "claude-sonnet-4-6", workspace: "" });
+  const [addForm, setAddForm] = useState({ id: "", name: "", emoji: "🤖", model: "anthropic/claude-sonnet-4-6", workspace: "" });
   const [removeConfirm, setRemoveConfirm] = useState<{ id: string; step: "confirm" | "backup" } | null>(null);
   const [fileViewAgent, setFileViewAgent] = useState<string | null>(null);
   const [agentFiles, setAgentFiles] = useState<{ name: string; size: number }[]>([]);
@@ -157,7 +157,7 @@ export default function AgentsPage() {
             <input value={addForm.name} onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))} placeholder="Display Name" className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500" />
             <input value={addForm.emoji} onChange={(e) => setAddForm((f) => ({ ...f, emoji: e.target.value }))} placeholder="Emoji" className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500" />
             <select value={addForm.model} onChange={(e) => setAddForm((f) => ({ ...f, model: e.target.value }))} className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500">
-              {AVAILABLE_MODELS.map((m) => <option key={m} value={m}>{m}</option>)}
+              {AVAILABLE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label} ({m.provider})</option>)}
             </select>
           </div>
           <div className="flex gap-2">
@@ -287,8 +287,8 @@ export default function AgentsPage() {
               <div className="relative">
                 <select value={agent.model} onChange={(e) => handleModelChange(agent.id, e.target.value)}
                   className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500 appearance-none cursor-pointer pr-8">
-                  {!AVAILABLE_MODELS.includes(agent.model) && <option value={agent.model}>{agent.model}</option>}
-                  {AVAILABLE_MODELS.map((m) => <option key={m} value={m}>{m}</option>)}
+                  {!AVAILABLE_MODELS.some((m) => m.id === agent.model) && <option value={agent.model}>{agent.model}</option>}
+                  {AVAILABLE_MODELS.map((m) => <option key={m.id} value={m.id}>{m.label} ({m.provider})</option>)}
                 </select>
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-xs">▼</span>
               </div>
