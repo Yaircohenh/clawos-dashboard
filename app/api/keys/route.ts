@@ -8,8 +8,8 @@ import { agentsRuntimeDir, openclawConfigPath, envFilePath } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
-const AGENT_BASE = agentsRuntimeDir();
-const CONFIG_PATH = openclawConfigPath();
+function getAgentBase() { return agentsRuntimeDir(); }
+function getConfigPath() { return openclawConfigPath(); }
 
 interface KeyInfo {
   id: string;
@@ -32,10 +32,10 @@ function readJsonSafe(path: string): Record<string, unknown> | null {
 function getAuthProfiles(): KeyInfo[] {
   const keys: KeyInfo[] = [];
   try {
-    const agentDirs = readdirSync(AGENT_BASE);
+    const agentDirs = readdirSync(getAgentBase());
     for (const agentId of agentDirs) {
       const profilePath = join(
-        AGENT_BASE,
+        getAgentBase(),
         agentId,
         "agent",
         "auth-profiles.json"
@@ -67,7 +67,7 @@ function getAuthProfiles(): KeyInfo[] {
 }
 
 function getGatewayInfo(): KeyInfo[] {
-  const config = readJsonSafe(CONFIG_PATH);
+  const config = readJsonSafe(getConfigPath());
   if (!config) return [];
 
   const keys: KeyInfo[] = [];
@@ -307,10 +307,10 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const config = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+      const config = JSON.parse(readFileSync(getConfigPath(), "utf-8"));
       if (!config.gateway) config.gateway = {};
       config.gateway.port = port;
-      writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n");
+      writeFileSync(getConfigPath(), JSON.stringify(config, null, 2) + "\n");
       return NextResponse.json({ success: true });
     } catch (err: unknown) {
       return NextResponse.json(

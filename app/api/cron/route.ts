@@ -7,7 +7,7 @@ import { cronJobsPath } from "@/lib/paths";
 export const dynamic = "force-dynamic";
 
 const SAFE_ID = /^[a-zA-Z0-9_\-]+$/;
-const JOBS_PATH = cronJobsPath();
+function getJobsPath() { return cronJobsPath(); }
 
 export async function GET(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for") || "127.0.0.1";
@@ -20,14 +20,14 @@ export async function GET(request: NextRequest) {
 
 function readJobs(): { jobs: Record<string, unknown>[] } {
   try {
-    return JSON.parse(readFileSync(JOBS_PATH, "utf-8"));
+    return JSON.parse(readFileSync(getJobsPath(), "utf-8"));
   } catch {
     return { jobs: [] };
   }
 }
 
 function writeJobs(data: { jobs: Record<string, unknown>[] }) {
-  writeFileSync(JOBS_PATH, JSON.stringify(data, null, 2) + "\n", "utf-8");
+  writeFileSync(getJobsPath(), JSON.stringify(data, null, 2) + "\n", "utf-8");
 }
 
 export async function POST(request: NextRequest) {

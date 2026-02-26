@@ -4,11 +4,11 @@ import { agentScoresPath } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
-const SCORES_PATH = agentScoresPath();
+function getScoresPath() { return agentScoresPath(); }
 
 export async function GET() {
   try {
-    const raw = readFileSync(SCORES_PATH, "utf-8");
+    const raw = readFileSync(getScoresPath(), "utf-8");
     const scores = JSON.parse(raw);
     return NextResponse.json(scores);
   } catch {

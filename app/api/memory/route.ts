@@ -12,8 +12,8 @@ export const dynamic = "force-dynamic";
 // Sub-agents: ~/.openclaw/workspace/workspace/<agentId>/  (.md files)
 // Memory subdirs: ~/.openclaw/workspace/workspace/<agentId>/memory/
 // Legacy: ~/.openclaw/agents/<agentId>/memory/
-const WORKSPACE_BASE = workspaceDir();
-const AGENTS_BASE = agentsRuntimeDir();
+function getWorkspaceBase() { return workspaceDir(); }
+function getAgentsBase() { return agentsRuntimeDir(); }
 
 function scanDir(dir: string, agentId: string, results: MemoryFile[]) {
   try {
@@ -56,12 +56,12 @@ function getMemoryFiles(): MemoryFile[] {
   const results: MemoryFile[] = [];
 
   // 1. Main agent top-level workspace .md files
-  scanDir(WORKSPACE_BASE, "main", results);
+  scanDir(getWorkspaceBase(), "main", results);
   // Main agent memory subdir
-  scanDir(join(WORKSPACE_BASE, "memory"), "main", results);
+  scanDir(join(getWorkspaceBase(), "memory"), "main", results);
 
   // 2. Sub-agent workspace dirs
-  const workspaceDir = join(WORKSPACE_BASE, "workspace");
+  const workspaceDir = join(getWorkspaceBase(), "workspace");
   try {
     const agentDirs = readdirSync(workspaceDir);
     for (const agentId of agentDirs) {
@@ -81,9 +81,9 @@ function getMemoryFiles(): MemoryFile[] {
 
   // 3. Legacy: agents dir
   try {
-    const agents = readdirSync(AGENTS_BASE);
+    const agents = readdirSync(getAgentsBase());
     for (const agentId of agents) {
-      scanDir(join(AGENTS_BASE, agentId, "memory"), agentId, results);
+      scanDir(join(getAgentsBase(), agentId, "memory"), agentId, results);
     }
   } catch {
     // agents dir doesn't exist
@@ -122,7 +122,7 @@ export async function GET(request: NextRequest) {
 
     // Try QMD search first (semantic BM25 + vector)
     try {
-      const qmdHome = join(AGENTS_BASE, agentId, "qmd");
+      const qmdHome = join(getAgentsBase(), agentId, "qmd");
       if (existsSync(qmdHome)) {
         const r = spawnSync(qmdBin(), ["search", safeQuery, "--json"], {
           encoding: "utf-8",

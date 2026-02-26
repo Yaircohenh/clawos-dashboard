@@ -15,8 +15,6 @@ interface AgentActivity {
   lines: { type: string; text: string; timestamp?: string }[];
 }
 
-const AGENT_BASE = agentsRuntimeDir();
-
 function getAgentInfo(): {
   id: string;
   name: string;
@@ -45,7 +43,7 @@ function getAgentInfo(): {
 
 function getLatestSessionFile(agentId: string): string | null {
   try {
-    const sessDir = join(AGENT_BASE, agentId, "sessions");
+    const sessDir = join(agentsRuntimeDir(), agentId, "sessions");
     const files = readdirSync(sessDir)
       .filter((f) => f.endsWith(".jsonl"))
       .map((f) => ({

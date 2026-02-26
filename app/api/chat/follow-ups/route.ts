@@ -6,11 +6,9 @@ import { agentsRuntimeDir } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
-const AGENT_BASE = agentsRuntimeDir();
-
 function getLatestSessionFile(agentId: string): string | null {
   try {
-    const sessDir = join(AGENT_BASE, agentId, "sessions");
+    const sessDir = join(agentsRuntimeDir(), agentId, "sessions");
     const files = readdirSync(sessDir)
       .filter((f) => f.endsWith(".jsonl"))
       .map((f) => ({
@@ -25,7 +23,7 @@ function getLatestSessionFile(agentId: string): string | null {
 }
 
 function getSessionFileById(agentId: string, sessionId: string): string | null {
-  const sessDir = join(AGENT_BASE, agentId, "sessions");
+  const sessDir = join(agentsRuntimeDir(), agentId, "sessions");
   const direct = join(sessDir, `${sessionId}.jsonl`);
   if (existsSync(direct)) return direct;
   try {

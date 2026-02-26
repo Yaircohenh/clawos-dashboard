@@ -14,11 +14,9 @@ import { agentsRuntimeDir } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
-const AGENT_BASE = agentsRuntimeDir();
-
 function getLatestSessionFile(agentId: string): string | null {
   try {
-    const sessDir = join(AGENT_BASE, agentId, "sessions");
+    const sessDir = join(agentsRuntimeDir(), agentId, "sessions");
     const files = readdirSync(sessDir)
       .filter((f) => f.endsWith(".jsonl"))
       .map((f) => ({
@@ -33,7 +31,7 @@ function getLatestSessionFile(agentId: string): string | null {
 }
 
 function getSessionFileById(agentId: string, sessionId: string): string | null {
-  const sessDir = join(AGENT_BASE, agentId, "sessions");
+  const sessDir = join(agentsRuntimeDir(), agentId, "sessions");
   // Direct match: {sessionId}.jsonl
   const direct = join(sessDir, `${sessionId}.jsonl`);
   if (existsSync(direct)) return direct;
@@ -56,7 +54,7 @@ function getSessionFileById(agentId: string, sessionId: string): string | null {
  * swap the entry before spawning to route to the right .jsonl transcript.
  */
 function activateSession(agentId: string, sessionId: string): void {
-  const sessDir = join(AGENT_BASE, agentId, "sessions");
+  const sessDir = join(agentsRuntimeDir(), agentId, "sessions");
   const sessJsonPath = join(sessDir, "sessions.json");
   const sessionFile = join(sessDir, `${sessionId}.jsonl`);
   const sessionKey = `agent:${agentId}:main`;

@@ -6,7 +6,7 @@ import { openclawConfigPath } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
-const CONFIG_PATH = openclawConfigPath();
+function getConfigPath() { return openclawConfigPath(); }
 
 interface ChannelConfig {
   id: string;
@@ -98,16 +98,16 @@ const CHANNEL_TEMPLATES: Record<
 
 function readConfig(): Record<string, unknown> {
   try {
-    return JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+    return JSON.parse(readFileSync(getConfigPath(), "utf-8"));
   } catch {
     return {};
   }
 }
 
 function writeConfig(config: Record<string, unknown>) {
-  const dir = CONFIG_PATH.replace(/\/[^/]+$/, "");
+  const dir = getConfigPath().replace(/\/[^/]+$/, "");
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + "\n");
+  writeFileSync(getConfigPath(), JSON.stringify(config, null, 2) + "\n");
 }
 
 function runFile(bin: string, args: string[]): string {

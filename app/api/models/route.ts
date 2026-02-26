@@ -5,12 +5,12 @@ import { openclawConfigPath, dashboardModelsPath } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
-const CONFIG_PATH = openclawConfigPath();
-const MODELS_PATH = dashboardModelsPath();
+function getConfigPath() { return openclawConfigPath(); }
+function getModelsPath() { return dashboardModelsPath(); }
 
 function readConfig(): Record<string, any> {
   try {
-    return JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
+    return JSON.parse(readFileSync(getConfigPath(), "utf-8"));
   } catch {
     return {};
   }
@@ -18,17 +18,17 @@ function readConfig(): Record<string, any> {
 
 function readModelsConfig(): { available: string[]; fallback: string } {
   try {
-    if (existsSync(MODELS_PATH)) {
-      return JSON.parse(readFileSync(MODELS_PATH, "utf-8"));
+    if (existsSync(getModelsPath())) {
+      return JSON.parse(readFileSync(getModelsPath(), "utf-8"));
     }
   } catch { /* ok */ }
   return { available: [], fallback: "" };
 }
 
 function writeModelsConfig(models: { available: string[]; fallback: string }) {
-  const dir = MODELS_PATH.replace(/\/[^/]+$/, "");
+  const dir = getModelsPath().replace(/\/[^/]+$/, "");
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(MODELS_PATH, JSON.stringify(models, null, 2) + "\n");
+  writeFileSync(getModelsPath(), JSON.stringify(models, null, 2) + "\n");
 }
 
 interface ModelInfo {

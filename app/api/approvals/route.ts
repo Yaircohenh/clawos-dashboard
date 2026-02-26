@@ -6,7 +6,7 @@ import { securityPolicyPath } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
-const POLICY_PATH = securityPolicyPath();
+function getPolicyPath() { return securityPolicyPath(); }
 
 export async function GET(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for") || "127.0.0.1";
@@ -19,14 +19,14 @@ export async function GET(request: NextRequest) {
 
 function readPolicy(): Record<string, unknown> {
   try {
-    return JSON.parse(readFileSync(POLICY_PATH, "utf-8"));
+    return JSON.parse(readFileSync(getPolicyPath(), "utf-8"));
   } catch {
     return { rules: [] };
   }
 }
 
 function writePolicy(data: Record<string, unknown>) {
-  writeFileSync(POLICY_PATH, JSON.stringify(data, null, 2) + "\n");
+  writeFileSync(getPolicyPath(), JSON.stringify(data, null, 2) + "\n");
 }
 
 export async function POST(request: NextRequest) {
