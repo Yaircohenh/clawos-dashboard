@@ -298,6 +298,18 @@ export default function ChannelsPage() {
           through the same channel.
         </p>
       </div>
+
+      <div className="mt-4 bg-gray-900 rounded-xl border border-yellow-800/50 p-5">
+        <h3 className="font-semibold mb-2 text-yellow-400">DM Security</h3>
+        <p className="text-sm text-gray-400">
+          All channels are configured with <code className="text-yellow-300">dmPolicy: allowlist</code>.
+          Only your approved phone number or user ID can message the bot. Unknown senders are
+          silently blocked — they will not receive pairing codes or any response.
+        </p>
+        <p className="text-sm text-gray-500 mt-2">
+          To approve a new sender: <code className="text-gray-400">openclaw devices approve &lt;channel&gt; &lt;code&gt;</code>
+        </p>
+      </div>
     </div>
   );
 }

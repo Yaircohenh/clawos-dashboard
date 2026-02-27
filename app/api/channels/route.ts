@@ -174,6 +174,9 @@ export async function POST(request: NextRequest) {
         runFile("openclaw", ["plugins", "enable", pluginName]);
       }
 
+      // Lock down DM policy to allowlist — never send pairing codes to strangers
+      runFile("openclaw", ["config", "set", `channels.${channelType}.dmPolicy`, "allowlist"]);
+
       return NextResponse.json({ success: true });
     }
 
