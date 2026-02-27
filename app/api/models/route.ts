@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { openclawConfigPath, dashboardModelsPath } from "@/lib/paths";
+import { openclawConfigPath, dashboardModelsPath, envFilePath } from "@/lib/paths";
+import { detectProviderFromRegistry, getModelRegistry } from "@/lib/model-registry";
 
 export const dynamic = "force-dynamic";
 
@@ -39,11 +40,7 @@ interface ModelInfo {
 }
 
 function detectProvider(modelId: string): string {
-  if (/claude|anthropic/i.test(modelId)) return "Anthropic";
-  if (/gpt|o1|o3|openai/i.test(modelId)) return "OpenAI";
-  if (/grok|xai/i.test(modelId)) return "xAI";
-  if (/gemini|google/i.test(modelId)) return "Google";
-  return "Other";
+  return detectProviderFromRegistry(modelId);
 }
 
 export async function GET(request: NextRequest) {
@@ -134,6 +131,35 @@ export async function POST(request: NextRequest) {
       modelsConfig.fallback = modelId;
       writeModelsConfig(modelsConfig);
       return NextResponse.json({ success: true });
+    }
+
+    case "addProviderKey": {
+      const envKey = (body.envKey as string || "").trim();
+      const value = (body.value as string || "").trim();
+
+      // Validate envKey is a known registry key
+      const registry = getModelRegistry();
+      const validKeys = registry.providers.map((p) => p.envKey);
+      if (!validKeys.includes(envKey)) {
+        return NextResponse.json({ error: "Unknown provider key" }, { status: 400 });
+      }
+      if (!value || value.length > 500) {
+        return NextResponse.json({ error: "API key required (max 500 chars)" }, { status: 400 });
+      }
+
+      // Write to .env file
+      const envPath = envFilePath();
+      try {
+        let envContent = "";
+        try { envContent = readFileSync(envPath, "utf-8"); } catch { /* file may not exist */ }
+        const lines = envContent.split("\n").filter((l) => !l.startsWith(`${envKey}=`));
+        lines.push(`${envKey}=${value}`);
+        writeFileSync(envPath, lines.filter((l) => l.trim()).join("\n") + "\n");
+        process.env[envKey] = value;
+        return NextResponse.json({ success: true });
+      } catch (err: unknown) {
+        return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to save key" }, { status: 500 });
+      }
     }
 
     default:

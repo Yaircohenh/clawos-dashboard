@@ -10,12 +10,34 @@ interface ModelInfo {
   isFallback: boolean;
 }
 
-const COMMON_MODELS = [
-  { provider: "Anthropic", prefix: "anthropic", models: ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5-20251001"], link: "https://console.anthropic.com", linkLabel: "console.anthropic.com" },
-  { provider: "OpenAI", prefix: "openai", models: ["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"], link: "https://platform.openai.com/api-keys", linkLabel: "platform.openai.com/api-keys" },
-  { provider: "xAI", prefix: "xai", models: ["grok-4-1-fast", "grok-3"], link: "https://console.x.ai", linkLabel: "console.x.ai" },
-  { provider: "Google", prefix: "google", models: ["gemini-2.5-pro", "gemini-2.5-flash"], link: "https://aistudio.google.com/app/apikey", linkLabel: "aistudio.google.com/app/apikey" },
-];
+interface ModelEntry {
+  id: string;
+  label: string;
+  tier: "premium" | "standard" | "budget";
+}
+
+interface ProviderColor {
+  bg: string;
+  text: string;
+  border: string;
+}
+
+interface ProviderWithStatus {
+  id: string;
+  name: string;
+  prefix: string;
+  envKey: string;
+  consoleUrl: string;
+  color: ProviderColor;
+  models: ModelEntry[];
+  keyConfigured: boolean;
+}
+
+const TIER_BADGE: Record<string, { label: string; cls: string }> = {
+  premium: { label: "Premium", cls: "bg-amber-900/50 text-amber-400" },
+  standard: { label: "Standard", cls: "bg-blue-900/50 text-blue-400" },
+  budget: { label: "Budget", cls: "bg-gray-700 text-gray-400" },
+};
 
 export default function ModelsPage() {
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -23,9 +45,14 @@ export default function ModelsPage() {
   const [loading, setLoading] = useState(true);
   const [newModelId, setNewModelId] = useState("");
   const [adding, setAdding] = useState(false);
+  const [providers, setProviders] = useState<ProviderWithStatus[]>([]);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
+  const [savingKey, setSavingKey] = useState<string | null>(null);
 
   useEffect(() => {
     fetchModels();
+    fetchRegistry();
   }, []);
 
   async function fetchModels() {
@@ -43,8 +70,20 @@ export default function ModelsPage() {
     }
   }
 
-  async function addModel() {
-    const id = newModelId.trim();
+  async function fetchRegistry() {
+    try {
+      const res = await fetch("/api/models/registry");
+      if (res.ok) {
+        const data = await res.json();
+        setProviders(data.providers || []);
+      }
+    } catch {
+      // Registry is supplementary — page still works without it
+    }
+  }
+
+  async function addModel(modelId?: string) {
+    const id = (modelId || newModelId).trim();
     if (!id) { toast.error("Enter a model ID"); return; }
     setAdding(true);
     try {
@@ -55,7 +94,7 @@ export default function ModelsPage() {
       });
       if (res.ok) {
         toast.success("Model added");
-        setNewModelId("");
+        if (!modelId) setNewModelId("");
         fetchModels();
       } else {
         const data = await res.json();
@@ -98,6 +137,35 @@ export default function ModelsPage() {
     }
   }
 
+  async function saveProviderKey(envKey: string) {
+    const value = (keyInputs[envKey] || "").trim();
+    if (!value) { toast.error("Enter an API key"); return; }
+    setSavingKey(envKey);
+    try {
+      const res = await fetch("/api/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "addProviderKey", envKey, value }),
+      });
+      if (res.ok) {
+        toast.success("API key saved");
+        setKeyInputs((prev) => ({ ...prev, [envKey]: "" }));
+        fetchRegistry(); // Refresh key status
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed to save key");
+      }
+    } catch {
+      toast.error("Failed to save key");
+    } finally {
+      setSavingKey(null);
+    }
+  }
+
+  function toggleCollapse(providerId: string) {
+    setCollapsed((prev) => ({ ...prev, [providerId]: !prev[providerId] }));
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -110,7 +178,7 @@ export default function ModelsPage() {
     <div>
       <h1 className="text-2xl font-bold mb-6">Models</h1>
       <p className="text-gray-400 text-sm mb-6">
-        Manage LLM models available to your agents. Set a fallback model and add new providers.
+        Manage LLM models available to your agents. Set a fallback model, add providers, and configure API keys.
       </p>
 
       {/* Models In Use Table */}
@@ -129,70 +197,49 @@ export default function ModelsPage() {
                 </tr>
               </thead>
               <tbody>
-                {models.map((model) => (
-                  <tr key={model.id} className="border-b border-gray-800/50 hover:bg-gray-800/30">
-                    <td className="py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-xs ${
-                        model.provider === "Anthropic" ? "bg-purple-900/50 text-purple-400" :
-                        model.provider === "OpenAI" ? "bg-green-900/50 text-green-400" :
-                        model.provider === "xAI" ? "bg-blue-900/50 text-blue-400" :
-                        model.provider === "Google" ? "bg-yellow-900/50 text-yellow-400" :
-                        "bg-gray-700 text-gray-400"
-                      }`}>
-                        {model.provider}
-                      </span>
-                    </td>
-                    <td className="py-3 font-mono text-xs text-gray-200">{model.id}</td>
-                    <td className="py-3 text-gray-400 text-xs">
-                      {model.usedBy.length > 0 ? model.usedBy.join(", ") : <span className="text-gray-600">—</span>}
-                    </td>
-                    <td className="py-3 text-center">
-                      <button
-                        onClick={() => changeFallback(model.isFallback ? "" : model.id)}
-                        className={`text-lg ${model.isFallback ? "text-yellow-400" : "text-gray-600 hover:text-yellow-400"} transition-colors`}
-                        title={model.isFallback ? "Remove as fallback" : "Set as fallback"}
-                      >
-                        {model.isFallback ? "★" : "☆"}
-                      </button>
-                    </td>
-                    <td className="py-3 text-right">
-                      <button
-                        onClick={() => removeModel(model.id)}
-                        className="text-xs text-red-400 hover:text-red-300 transition-colors"
-                        title={model.usedBy.length > 0 ? "Cannot remove — in use" : "Remove model"}
-                      >
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {models.map((model) => {
+                  const regProvider = providers.find((p) => p.name === model.provider);
+                  const colorCls = regProvider
+                    ? `${regProvider.color.bg} ${regProvider.color.text}`
+                    : "bg-gray-700 text-gray-400";
+                  return (
+                    <tr key={model.id} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                      <td className="py-3">
+                        <span className={`px-2 py-0.5 rounded-full text-xs ${colorCls}`}>
+                          {model.provider}
+                        </span>
+                      </td>
+                      <td className="py-3 font-mono text-xs text-gray-200">{model.id}</td>
+                      <td className="py-3 text-gray-400 text-xs">
+                        {model.usedBy.length > 0 ? model.usedBy.join(", ") : <span className="text-gray-600">&mdash;</span>}
+                      </td>
+                      <td className="py-3 text-center">
+                        <button
+                          onClick={() => changeFallback(model.isFallback ? "" : model.id)}
+                          className={`text-lg ${model.isFallback ? "text-yellow-400" : "text-gray-600 hover:text-yellow-400"} transition-colors`}
+                          title={model.isFallback ? "Remove as fallback" : "Set as fallback"}
+                        >
+                          {model.isFallback ? "\u2605" : "\u2606"}
+                        </button>
+                      </td>
+                      <td className="py-3 text-right">
+                        <button
+                          onClick={() => removeModel(model.id)}
+                          className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                          title={model.usedBy.length > 0 ? "Cannot remove \u2014 in use" : "Remove model"}
+                        >
+                          Remove
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         ) : (
           <p className="text-gray-500 text-sm">No models registered. Add one below or assign a model to an agent.</p>
         )}
-      </section>
-
-      {/* Add Model Form */}
-      <section className="bg-gray-900 rounded-xl border border-gray-800 p-5 mb-6">
-        <h2 className="text-lg font-semibold mb-4">Add Model</h2>
-        <div className="flex gap-3">
-          <input
-            value={newModelId}
-            onChange={(e) => setNewModelId(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && addModel()}
-            placeholder="Model ID (e.g. anthropic/claude-sonnet-4-6)"
-            className="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500"
-          />
-          <button
-            onClick={addModel}
-            disabled={adding || !newModelId.trim()}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white rounded-lg text-sm"
-          >
-            {adding ? "Adding..." : "Add Model"}
-          </button>
-        </div>
       </section>
 
       {/* Fallback Selector */}
@@ -212,42 +259,136 @@ export default function ModelsPage() {
               <option key={m.id} value={m.id}>{m.id} ({m.provider})</option>
             ))}
           </select>
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-xs">▼</span>
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-xs">{"\u25BC"}</span>
         </div>
       </section>
 
-      {/* Common Models Reference */}
-      <section className="bg-gray-900 rounded-xl border border-gray-800 p-5">
-        <h2 className="text-lg font-semibold mb-4">Common Models Reference</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {COMMON_MODELS.map((group) => (
-            <div key={group.provider} className="bg-gray-800/50 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="font-medium text-sm">{group.provider}</h3>
-                <a
-                  href={group.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-blue-400 hover:text-blue-300"
+      {/* Provider Sections */}
+      {providers.length > 0 && (
+        <section className="mb-6">
+          <h2 className="text-lg font-semibold mb-4">Providers</h2>
+          <div className="space-y-4">
+            {providers.map((provider) => (
+              <div key={provider.id} className={`bg-gray-900 rounded-xl border ${provider.keyConfigured ? "border-gray-800" : provider.color.border} overflow-hidden`}>
+                {/* Provider Header */}
+                <button
+                  onClick={() => toggleCollapse(provider.id)}
+                  className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-800/30 transition-colors"
                 >
-                  {group.linkLabel} →
-                </a>
-              </div>
-              <div className="space-y-1">
-                {group.models.map((modelId) => (
-                  <div key={modelId} className="flex items-center justify-between">
-                    <code className="text-xs text-gray-300">{group.prefix}/{modelId}</code>
-                    <button
-                      onClick={() => { setNewModelId(`${group.prefix}/${modelId}`); }}
-                      className="text-xs text-gray-500 hover:text-blue-400 transition-colors"
-                    >
-                      Use
-                    </button>
+                  <div className="flex items-center gap-3">
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${provider.color.bg} ${provider.color.text}`}>
+                      {provider.name}
+                    </span>
+                    <span className={`inline-flex items-center gap-1.5 text-xs ${provider.keyConfigured ? "text-green-400" : "text-red-400"}`}>
+                      <span className={`w-2 h-2 rounded-full ${provider.keyConfigured ? "bg-green-400" : "bg-red-400"}`} />
+                      {provider.keyConfigured ? "Key configured" : "No key"}
+                    </span>
+                    <span className="text-xs text-gray-500">{provider.models.length} models</span>
                   </div>
-                ))}
+                  <div className="flex items-center gap-3">
+                    <a
+                      href={provider.consoleUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-400 hover:text-blue-300"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      Get API Key {"\u2192"}
+                    </a>
+                    <span className="text-gray-500 text-xs">{collapsed[provider.id] ? "\u25B6" : "\u25BC"}</span>
+                  </div>
+                </button>
+
+                {/* Provider Body */}
+                {!collapsed[provider.id] && (
+                  <div className="border-t border-gray-800 px-5 pb-4">
+                    {/* Inline Key Setup (if no key) */}
+                    {!provider.keyConfigured && (
+                      <div className="mt-4 mb-4 p-3 bg-gray-800/50 rounded-lg border border-gray-700">
+                        <p className="text-xs text-gray-400 mb-2">
+                          Enter your {provider.name} API key to use these models.{" "}
+                          <a href={provider.consoleUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">
+                            Get one here {"\u2192"}
+                          </a>
+                        </p>
+                        <div className="flex gap-2">
+                          <input
+                            type="password"
+                            value={keyInputs[provider.envKey] || ""}
+                            onChange={(e) => setKeyInputs((prev) => ({ ...prev, [provider.envKey]: e.target.value }))}
+                            onKeyDown={(e) => e.key === "Enter" && saveProviderKey(provider.envKey)}
+                            placeholder={`${provider.envKey}=sk-...`}
+                            className="flex-1 px-3 py-1.5 bg-gray-900 border border-gray-600 rounded text-sm text-white font-mono focus:outline-none focus:border-blue-500"
+                          />
+                          <button
+                            onClick={() => saveProviderKey(provider.envKey)}
+                            disabled={savingKey === provider.envKey || !(keyInputs[provider.envKey] || "").trim()}
+                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white rounded text-xs"
+                          >
+                            {savingKey === provider.envKey ? "Saving..." : "Save"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Model Rows */}
+                    <div className="mt-3 space-y-1">
+                      {provider.models.map((model) => {
+                        const fullId = `${provider.prefix}/${model.id}`;
+                        const alreadyAdded = models.some((m) => m.id === fullId);
+                        const tierInfo = TIER_BADGE[model.tier] || TIER_BADGE.standard;
+                        return (
+                          <div key={model.id} className="flex items-center justify-between py-2 px-2 rounded hover:bg-gray-800/30">
+                            <div className="flex items-center gap-3">
+                              <code className="text-xs text-gray-200 font-mono">{fullId}</code>
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] ${tierInfo.cls}`}>
+                                {tierInfo.label}
+                              </span>
+                            </div>
+                            <div>
+                              {alreadyAdded ? (
+                                <span className="text-xs text-gray-500">Added</span>
+                              ) : (
+                                <button
+                                  onClick={() => addModel(fullId)}
+                                  disabled={!provider.keyConfigured}
+                                  className="text-xs text-blue-400 hover:text-blue-300 disabled:text-gray-600 disabled:cursor-not-allowed transition-colors"
+                                  title={!provider.keyConfigured ? "Configure API key first" : `Add ${fullId}`}
+                                >
+                                  Use
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Add Custom Model Form */}
+      <section className="bg-gray-900 rounded-xl border border-gray-800 p-5">
+        <h2 className="text-lg font-semibold mb-4">Add Custom Model</h2>
+        <div className="flex gap-3">
+          <input
+            value={newModelId}
+            onChange={(e) => setNewModelId(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addModel()}
+            placeholder="Model ID (e.g. anthropic/claude-sonnet-4-6)"
+            className="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500"
+          />
+          <button
+            onClick={() => addModel()}
+            disabled={adding || !newModelId.trim()}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white rounded-lg text-sm"
+          >
+            {adding ? "Adding..." : "Add Model"}
+          </button>
         </div>
       </section>
     </div>

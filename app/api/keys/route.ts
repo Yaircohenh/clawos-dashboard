@@ -5,6 +5,7 @@ import { execFileSync } from "child_process";
 import { maskSecret } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { agentsRuntimeDir, openclawConfigPath, envFilePath } from "@/lib/paths";
+import { getModelRegistry } from "@/lib/model-registry";
 
 export const dynamic = "force-dynamic";
 
@@ -102,19 +103,13 @@ function getGatewayInfo(): KeyInfo[] {
 
 function getModelProviders(): KeyInfo[] {
   const keys: KeyInfo[] = [];
+  const registry = getModelRegistry();
 
-  // Check common env vars for API keys
-  const providers: { name: string; envVar: string }[] = [
-    { name: "Anthropic", envVar: "ANTHROPIC_API_KEY" },
-    { name: "OpenAI", envVar: "OPENAI_API_KEY" },
-    { name: "xAI/Grok", envVar: "XAI_API_KEY" },
-  ];
-
-  for (const p of providers) {
-    const key = process.env[p.envVar];
+  for (const p of registry.providers) {
+    const key = process.env[p.envKey];
     if (key) {
       keys.push({
-        id: `provider:${p.name.toLowerCase()}`,
+        id: `provider:${p.id}`,
         section: "providers",
         provider: p.name,
         keyType: "api-key",
@@ -230,6 +225,38 @@ export async function POST(request: NextRequest) {
           success: false,
           error: err instanceof Error ? err.message : "Connection failed",
         });
+      }
+    }
+
+    if (keyId.startsWith("provider:openai")) {
+      try {
+        const res = await fetch("https://api.openai.com/v1/models", {
+          headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY || ""}` },
+        });
+        return NextResponse.json({ success: true, valid: res.ok, status: res.status });
+      } catch (err: unknown) {
+        return NextResponse.json({ success: false, error: err instanceof Error ? err.message : "Connection failed" });
+      }
+    }
+
+    if (keyId.startsWith("provider:xai")) {
+      try {
+        const res = await fetch("https://api.x.ai/v1/models", {
+          headers: { Authorization: `Bearer ${process.env.XAI_API_KEY || ""}` },
+        });
+        return NextResponse.json({ success: true, valid: res.ok, status: res.status });
+      } catch (err: unknown) {
+        return NextResponse.json({ success: false, error: err instanceof Error ? err.message : "Connection failed" });
+      }
+    }
+
+    if (keyId.startsWith("provider:google")) {
+      try {
+        const key = process.env.GOOGLE_API_KEY || "";
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`);
+        return NextResponse.json({ success: true, valid: res.ok, status: res.status });
+      } catch (err: unknown) {
+        return NextResponse.json({ success: false, error: err instanceof Error ? err.message : "Connection failed" });
       }
     }
 
