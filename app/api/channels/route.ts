@@ -162,6 +162,18 @@ export async function POST(request: NextRequest) {
       };
       writeConfig(config);
 
+      // Auto-enable the corresponding gateway plugin
+      const pluginMap: Record<string, string> = {
+        whatsapp: "whatsapp",
+        telegram: "telegram",
+        gmail: "imap",
+        slack: "slack",
+      };
+      const pluginName = pluginMap[channelType];
+      if (pluginName) {
+        runFile("openclaw", ["plugins", "enable", pluginName]);
+      }
+
       return NextResponse.json({ success: true });
     }
 

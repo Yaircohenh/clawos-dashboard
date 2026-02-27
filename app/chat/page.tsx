@@ -170,6 +170,17 @@ export default function ChatPage() {
     inputRef.current?.focus();
   }, [activeId]);
 
+  // Auto-refresh when returning to this tab (Bug #5)
+  useEffect(() => {
+    function handleVisibility() {
+      if (document.visibilityState === "visible") {
+        refreshRef.current();
+      }
+    }
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => document.removeEventListener("visibilitychange", handleVisibility);
+  }, []);
+
   const updateAssistantMsg = useCallback(
     (convId: string, msgId: string, content: string) => {
       setConversations((prev) =>
@@ -592,63 +603,61 @@ export default function ChatPage() {
   async function refreshFromSession() {
     if (status === "streaming") return;
     try {
-      const params = activeConversation?.sessionId
-        ? `?sessionId=${encodeURIComponent(activeConversation.sessionId)}`
-        : "";
-      const res = await fetch(`/api/chat/latest${params}`);
+      const sessionId = activeConversation?.sessionId;
+      if (!sessionId) return;
+
+      const params = `?sessionId=${encodeURIComponent(sessionId)}`;
+      const res = await fetch(`/api/chat/history${params}`);
       if (!res.ok) return;
       const data = await res.json();
-      if (!data.userMessage || data.responses.length === 0) return;
-      const combined = data.responses.join("\n\n---\n\n");
+      if (!data.messages || data.messages.length === 0) return;
+
       const convId = activeId;
-      if (convId) {
+      if (!convId) return;
+
+      // Rebuild messages from session history, preserving file attachments
+      // from localStorage by matching user message content
+      const existingMsgs = activeConversation?.messages || [];
+      const rebuilt: Message[] = [];
+
+      for (const entry of data.messages as { role: "user" | "assistant"; content: string }[]) {
+        // Try to find a matching existing message to preserve files/metadata
+        const existing = existingMsgs.find(
+          (m) => m.role === entry.role && m.content === entry.content
+        );
+        rebuilt.push({
+          id: existing?.id || crypto.randomUUID(),
+          role: entry.role,
+          content: entry.content,
+          timestamp: existing?.timestamp || new Date(),
+          files: existing?.files,
+        });
+      }
+
+      // Only update if session has more or different messages
+      if (rebuilt.length >= existingMsgs.length) {
         setConversations((prev) =>
           prev.map((c) => {
             if (c.id !== convId) return c;
-            const msgs = [...c.messages];
-            for (let i = msgs.length - 1; i >= 0; i--) {
-              if (msgs[i].role === "assistant") {
-                if (combined.length > msgs[i].content.length) {
-                  msgs[i] = { ...msgs[i], content: combined };
-                }
-                break;
-              }
-            }
-            return { ...c, messages: msgs };
+            return { ...c, messages: rebuilt };
           })
         );
-        fullTextRef.current = combined;
-      } else {
-        const conv: Conversation = {
-          id: crypto.randomUUID(),
-          title: data.userMessage.slice(0, 40),
-          messages: [
-            {
-              id: crypto.randomUUID(),
-              role: "user",
-              content: data.userMessage,
-              timestamp: new Date(),
-            },
-            {
-              id: crypto.randomUUID(),
-              role: "assistant",
-              content: combined,
-              timestamp: new Date(),
-            },
-          ],
-          createdAt: new Date(),
-          sessionId: crypto.randomUUID(),
-        };
-        setConversations((prev) => [conv, ...prev]);
-        setActiveId(conv.id);
-        fullTextRef.current = combined;
+        const lastAssistant = rebuilt.filter((m) => m.role === "assistant").pop();
+        if (lastAssistant) {
+          fullTextRef.current = lastAssistant.content;
+        }
       }
+
       stopPolling();
       setStatus("idle");
     } catch {
       /* silently fail */
     }
   }
+
+  // Use a ref for refreshFromSession to avoid stale closures in the visibility listener
+  const refreshRef = useRef(refreshFromSession);
+  refreshRef.current = refreshFromSession;
 
   function clearConversation() {
     if (abortRef.current) abortRef.current.abort();

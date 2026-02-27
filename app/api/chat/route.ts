@@ -86,6 +86,52 @@ function activateSession(agentId: string, sessionId: string): void {
   writeFileSync(sessJsonPath, JSON.stringify(store, null, 2), "utf8");
 }
 
+/**
+ * Strip thinking/redacted_thinking blocks from assistant messages in a session
+ * .jsonl file. The API rejects these blocks on subsequent turns.
+ */
+function stripThinkingBlocks(sessionFile: string): void {
+  try {
+    if (!existsSync(sessionFile)) return;
+    const raw = readFileSync(sessionFile, "utf-8").trim();
+    if (!raw) return;
+
+    let modified = false;
+    const lines = raw.split("\n").map((line) => {
+      try {
+        const entry = JSON.parse(line);
+        if (
+          entry.type === "message" &&
+          entry.message?.role === "assistant" &&
+          Array.isArray(entry.message.content)
+        ) {
+          const filtered = entry.message.content.filter(
+            (block: Record<string, unknown>) =>
+              block.type !== "thinking" && block.type !== "redacted_thinking"
+          );
+          if (filtered.length !== entry.message.content.length) {
+            modified = true;
+            entry.message.content =
+              filtered.length > 0
+                ? filtered
+                : [{ type: "text", text: "" }];
+            return JSON.stringify(entry);
+          }
+        }
+      } catch {
+        /* keep line as-is */
+      }
+      return line;
+    });
+
+    if (modified) {
+      writeFileSync(sessionFile, lines.join("\n") + "\n", "utf-8");
+    }
+  } catch {
+    /* best-effort — don't block the spawn */
+  }
+}
+
 function countFileLines(filePath: string): number {
   try {
     const content = readFileSync(filePath, "utf-8").trim();
@@ -147,10 +193,15 @@ export async function POST(request: NextRequest) {
         activateSession("main", sessionId);
       }
 
-      // Snapshot session line count BEFORE CLI starts
+      // Strip thinking blocks from existing session to prevent API rejection
       const preSessionFile = sessionId
         ? getSessionFileById("main", sessionId)
         : getLatestSessionFile("main");
+      if (preSessionFile) {
+        stripThinkingBlocks(preSessionFile);
+      }
+
+      // Snapshot session line count BEFORE CLI starts
       const preBaseline = preSessionFile ? countFileLines(preSessionFile) : 0;
 
       const args = ["agent", "--agent", "main", "--message", message];
