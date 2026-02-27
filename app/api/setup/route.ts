@@ -43,6 +43,37 @@ function runFile(bin: string, args: string[]): string {
   }
 }
 
+// Agent ID → tier mapping
+const AGENT_TIERS: Record<string, "flagship" | "standard" | "light"> = {
+  main: "flagship",
+  ninja: "standard",
+  ops: "standard",
+  cto: "standard",
+  legal: "standard",
+  accounting: "light",
+  finance: "light",
+  marketing: "light",
+};
+
+function setAgentModels(providerId: string) {
+  const registry = getModelRegistry();
+  const provider = registry.providers.find((p) => p.id === providerId);
+  if (!provider?.agentTiers) return;
+
+  const config = readConfig();
+  if (!config.agents?.list) return;
+
+  for (const agent of config.agents.list) {
+    const tier = AGENT_TIERS[agent.id];
+    if (!tier) continue;
+    const modelId = provider.agentTiers[tier];
+    if (modelId) {
+      agent.model = `${provider.prefix}/${modelId}`;
+    }
+  }
+  writeConfig(config);
+}
+
 function restartGateway() {
   // Load API keys from .env into spawn environment
   const envPath = envFilePath();
@@ -210,6 +241,12 @@ export async function POST(request: NextRequest) {
         lines.push(`${envKey}=${value}`);
         writeFileSync(envPath, lines.filter((l) => l.trim()).join("\n") + "\n");
         process.env[envKey] = value;
+
+        // Set all agent models to this provider's tier-appropriate models
+        const provider = registry.providers.find((p) => p.envKey === envKey);
+        if (provider) {
+          setAgentModels(provider.id);
+        }
 
         return NextResponse.json({ success: true });
       } catch (err: unknown) {

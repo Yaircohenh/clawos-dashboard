@@ -14,6 +14,12 @@ export interface ProviderColor {
   border: string;
 }
 
+export interface AgentTiers {
+  flagship: string;
+  standard: string;
+  light: string;
+}
+
 export interface Provider {
   id: string;
   name: string;
@@ -22,6 +28,7 @@ export interface Provider {
   consoleUrl: string;
   color: ProviderColor;
   models: ModelEntry[];
+  agentTiers: AgentTiers;
 }
 
 export interface ModelRegistry {
