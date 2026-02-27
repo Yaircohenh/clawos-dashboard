@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PUBLIC_PATHS = ["/login", "/api/auth/login"];
+const PUBLIC_PATHS = ["/login", "/api/auth/login", "/setup", "/api/setup"];
 const SESSION_COOKIE = "clawos_session";
 
 export default function proxy(request: NextRequest) {

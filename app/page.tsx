@@ -1,9 +1,17 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { existsSync } from "fs";
+import { join } from "path";
+import { openclawHome } from "@/lib/paths";
 import { getAgents, getChannels, getSystemStatus } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
 export default function OverviewPage() {
+  if (!existsSync(join(openclawHome(), "setup-complete"))) {
+    redirect("/setup");
+  }
+
   const agents = getAgents();
   const channels = getChannels();
   const system = getSystemStatus();
