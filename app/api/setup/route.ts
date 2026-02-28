@@ -6,6 +6,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { openclawConfigPath, openclawHome, infraDir, envFilePath } from "@/lib/paths";
 import { getModelRegistry } from "@/lib/model-registry";
 import { createSession } from "@/lib/auth";
+import { registerAuthProfile } from "@/lib/auth-profiles";
 
 export const dynamic = "force-dynamic";
 
@@ -41,41 +42,6 @@ function runFile(bin: string, args: string[]): string {
     if (err?.stdout) return (err.stdout as string).trim();
     return "";
   }
-}
-
-// ── Provider key → auth-profiles.json mapping ───────────────────────
-// The gateway's internal agent runner looks for keys in auth-profiles.json
-// before falling back to env vars. We write directly to ensure keys are found.
-
-const PROVIDER_ENV_MAP: Record<string, string> = {
-  ANTHROPIC_API_KEY: "anthropic",
-  OPENAI_API_KEY: "openai",
-  XAI_API_KEY: "xai",
-  GOOGLE_API_KEY: "google",
-};
-
-function registerAuthProfile(envKey: string, apiKey: string) {
-  const provider = PROVIDER_ENV_MAP[envKey];
-  if (!provider) return;
-
-  const authDir = join(openclawHome(), "agents", "main", "agent");
-  if (!existsSync(authDir)) mkdirSync(authDir, { recursive: true });
-
-  const authPath = join(authDir, "auth-profiles.json");
-  let store: { version: number; profiles: Record<string, unknown> };
-  try {
-    store = JSON.parse(readFileSync(authPath, "utf-8"));
-  } catch {
-    store = { version: 1, profiles: {} };
-  }
-
-  const profileId = `${provider}:manual`;
-  store.profiles[profileId] = {
-    type: "api_key",
-    provider,
-    key: apiKey,
-  };
-  writeFileSync(authPath, JSON.stringify(store, null, 2) + "\n");
 }
 
 // Agent ID → tier mapping

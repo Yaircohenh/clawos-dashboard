@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { openclawConfigPath, dashboardModelsPath, envFilePath } from "@/lib/paths";
 import { detectProviderFromRegistry, getModelRegistry } from "@/lib/model-registry";
+import { registerAuthProfile } from "@/lib/auth-profiles";
 
 export const dynamic = "force-dynamic";
 
@@ -156,6 +157,10 @@ export async function POST(request: NextRequest) {
         lines.push(`${envKey}=${value}`);
         writeFileSync(envPath, lines.filter((l) => l.trim()).join("\n") + "\n");
         process.env[envKey] = value;
+
+        // Register key with gateway's auth-profiles so internal agent runner finds it
+        registerAuthProfile(envKey, value);
+
         return NextResponse.json({ success: true });
       } catch (err: unknown) {
         return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to save key" }, { status: 500 });
