@@ -161,6 +161,7 @@ export async function POST(request: NextRequest) {
       type: fileType,
       mimeType: file.type,
       extractedText: extractedText || null,
+      previewUrl: fileType === "image" ? `/api/files/${fileName}` : undefined,
     });
   } catch (err) {
     return NextResponse.json(

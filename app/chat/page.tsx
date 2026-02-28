@@ -62,7 +62,7 @@ function saveToStorage(conversations: Conversation[]) {
           role: m.role,
           content: m.content,
           timestamp: m.timestamp.toISOString(),
-          files: m.files?.map((f) => ({ ...f, previewUrl: undefined })),
+          files: m.files,
         })),
         createdAt: c.createdAt.toISOString(),
         sessionId: c.sessionId,
@@ -284,12 +284,8 @@ export default function ChatPage() {
         mimeType: data.mimeType,
         path: data.path,
         extractedText: data.extractedText,
+        previewUrl: data.previewUrl,
       };
-
-      // Create local preview URL for images
-      if (attachment.type === "image") {
-        attachment.previewUrl = URL.createObjectURL(file);
-      }
 
       return attachment;
     } catch {
@@ -312,11 +308,7 @@ export default function ChatPage() {
   }
 
   function removePendingFile(id: string) {
-    setPendingFiles((prev) => {
-      const removed = prev.find((f) => f.id === id);
-      if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
-      return prev.filter((f) => f.id !== id);
-    });
+    setPendingFiles((prev) => prev.filter((f) => f.id !== id));
   }
 
   function handleDrop(e: React.DragEvent) {
