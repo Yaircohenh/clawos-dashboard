@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { openclawConfigPath, dashboardModelsPath, envFilePath } from "@/lib/paths";
 import { detectProviderFromRegistry, getModelRegistry } from "@/lib/model-registry";
-import { registerAuthProfile } from "@/lib/auth-profiles";
+import { registerAuthProfile, removeAuthProfile } from "@/lib/auth-profiles";
 
 export const dynamic = "force-dynamic";
 
@@ -164,6 +164,33 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true });
       } catch (err: unknown) {
         return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to save key" }, { status: 500 });
+      }
+    }
+
+    case "removeProviderKey": {
+      const envKey = (body.envKey as string || "").trim();
+
+      const registry = getModelRegistry();
+      const validKeys = registry.providers.map((p) => p.envKey);
+      if (!validKeys.includes(envKey)) {
+        return NextResponse.json({ error: "Unknown provider key" }, { status: 400 });
+      }
+
+      // Remove from .env file
+      const envPath = envFilePath();
+      try {
+        let envContent = "";
+        try { envContent = readFileSync(envPath, "utf-8"); } catch { /* ok */ }
+        const lines = envContent.split("\n").filter((l) => !l.startsWith(`${envKey}=`));
+        writeFileSync(envPath, lines.filter((l) => l.trim()).join("\n") + "\n");
+        delete process.env[envKey];
+
+        // Remove from gateway's auth-profiles
+        removeAuthProfile(envKey);
+
+        return NextResponse.json({ success: true });
+      } catch (err: unknown) {
+        return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to remove key" }, { status: 500 });
       }
     }
 

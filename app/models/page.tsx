@@ -70,6 +70,8 @@ export default function ModelsPage() {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
   const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [editingKey, setEditingKey] = useState<Record<string, boolean>>({});
+  const [removingKey, setRemovingKey] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"models" | "pricing">("models");
   const [sortField, setSortField] = useState<SortField>("output");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -175,6 +177,7 @@ export default function ModelsPage() {
       if (res.ok) {
         toast.success("API key saved");
         setKeyInputs((prev) => ({ ...prev, [envKey]: "" }));
+        setEditingKey((prev) => ({ ...prev, [envKey]: false }));
         fetchRegistry();
       } else {
         const data = await res.json();
@@ -184,6 +187,30 @@ export default function ModelsPage() {
       toast.error("Failed to save key");
     } finally {
       setSavingKey(null);
+    }
+  }
+
+  async function removeProviderKey(envKey: string) {
+    setRemovingKey(envKey);
+    try {
+      const res = await fetch("/api/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "removeProviderKey", envKey }),
+      });
+      if (res.ok) {
+        toast.success("API key removed");
+        setEditingKey((prev) => ({ ...prev, [envKey]: false }));
+        setKeyInputs((prev) => ({ ...prev, [envKey]: "" }));
+        fetchRegistry();
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed to remove key");
+      }
+    } catch {
+      toast.error("Failed to remove key");
+    } finally {
+      setRemovingKey(null);
     }
   }
 
@@ -413,34 +440,63 @@ export default function ModelsPage() {
                     {/* Provider Body */}
                     {!collapsed[provider.id] && (
                       <div className="border-t border-gray-800 px-5 pb-4">
-                        {/* Inline Key Setup (if no key) */}
-                        {!provider.keyConfigured && (
-                          <div className="mt-4 mb-4 p-3 bg-gray-800/50 rounded-lg border border-gray-700">
-                            <p className="text-xs text-gray-400 mb-2">
-                              Enter your {provider.name} API key to use these models.{" "}
-                              <a href={provider.consoleUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">
-                                Get one here {"\u2192"}
-                              </a>
-                            </p>
-                            <div className="flex gap-2">
-                              <input
-                                type="password"
-                                value={keyInputs[provider.envKey] || ""}
-                                onChange={(e) => setKeyInputs((prev) => ({ ...prev, [provider.envKey]: e.target.value }))}
-                                onKeyDown={(e) => e.key === "Enter" && saveProviderKey(provider.envKey)}
-                                placeholder={`${provider.envKey}=sk-...`}
-                                className="flex-1 px-3 py-1.5 bg-gray-900 border border-gray-600 rounded text-sm text-white font-mono focus:outline-none focus:border-blue-500"
-                              />
-                              <button
-                                onClick={() => saveProviderKey(provider.envKey)}
-                                disabled={savingKey === provider.envKey || !(keyInputs[provider.envKey] || "").trim()}
-                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white rounded text-xs"
-                              >
-                                {savingKey === provider.envKey ? "Saving..." : "Save"}
-                              </button>
+                        {/* Inline Key Setup / Management */}
+                        <div className="mt-4 mb-4 p-3 bg-gray-800/50 rounded-lg border border-gray-700">
+                          {provider.keyConfigured && !editingKey[provider.envKey] ? (
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-gray-400 font-mono">{provider.envKey} = ••••••••</span>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => setEditingKey((prev) => ({ ...prev, [provider.envKey]: true }))}
+                                  className="px-2.5 py-1 text-xs text-blue-400 hover:text-blue-300 border border-gray-700 rounded transition-colors"
+                                >
+                                  Update
+                                </button>
+                                <button
+                                  onClick={() => removeProviderKey(provider.envKey)}
+                                  disabled={removingKey === provider.envKey}
+                                  className="px-2.5 py-1 text-xs text-red-400 hover:text-red-300 disabled:text-gray-600 border border-gray-700 rounded transition-colors"
+                                >
+                                  {removingKey === provider.envKey ? "Removing..." : "Remove"}
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          ) : (
+                            <>
+                              <p className="text-xs text-gray-400 mb-2">
+                                {provider.keyConfigured ? "Enter a new" : "Enter your"} {provider.name} API key.{" "}
+                                <a href={provider.consoleUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300">
+                                  Get one here {"\u2192"}
+                                </a>
+                              </p>
+                              <div className="flex gap-2">
+                                <input
+                                  type="password"
+                                  value={keyInputs[provider.envKey] || ""}
+                                  onChange={(e) => setKeyInputs((prev) => ({ ...prev, [provider.envKey]: e.target.value }))}
+                                  onKeyDown={(e) => e.key === "Enter" && saveProviderKey(provider.envKey)}
+                                  placeholder={`${provider.envKey}=sk-...`}
+                                  className="flex-1 px-3 py-1.5 bg-gray-900 border border-gray-600 rounded text-sm text-white font-mono focus:outline-none focus:border-blue-500"
+                                />
+                                <button
+                                  onClick={() => saveProviderKey(provider.envKey)}
+                                  disabled={savingKey === provider.envKey || !(keyInputs[provider.envKey] || "").trim()}
+                                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white rounded text-xs"
+                                >
+                                  {savingKey === provider.envKey ? "Saving..." : "Save"}
+                                </button>
+                                {editingKey[provider.envKey] && (
+                                  <button
+                                    onClick={() => setEditingKey((prev) => ({ ...prev, [provider.envKey]: false }))}
+                                    className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-gray-300 transition-colors"
+                                  >
+                                    Cancel
+                                  </button>
+                                )}
+                              </div>
+                            </>
+                          )}
+                        </div>
 
                         {/* Model Rows */}
                         <div className="mt-3 space-y-1">
@@ -516,7 +572,26 @@ export default function ModelsPage() {
                     <p className="text-xs text-gray-400 mb-3">
                       Access 290+ models from all providers with a single API key. 5.5% fee on credit purchase, no per-token markup.
                     </p>
-                    {!provider.keyConfigured && (
+                    {provider.keyConfigured && !editingKey[provider.envKey] ? (
+                      <div className="flex items-center justify-between p-2 bg-gray-800/50 rounded border border-gray-700">
+                        <span className="text-xs text-gray-400 font-mono">{provider.envKey} = ••••••••</span>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setEditingKey((prev) => ({ ...prev, [provider.envKey]: true }))}
+                            className="px-2.5 py-1 text-xs text-blue-400 hover:text-blue-300 border border-gray-700 rounded transition-colors"
+                          >
+                            Update
+                          </button>
+                          <button
+                            onClick={() => removeProviderKey(provider.envKey)}
+                            disabled={removingKey === provider.envKey}
+                            className="px-2.5 py-1 text-xs text-red-400 hover:text-red-300 disabled:text-gray-600 border border-gray-700 rounded transition-colors"
+                          >
+                            {removingKey === provider.envKey ? "Removing..." : "Remove"}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
                       <div className="flex gap-2">
                         <input
                           type="password"
@@ -533,6 +608,14 @@ export default function ModelsPage() {
                         >
                           {savingKey === provider.envKey ? "Saving..." : "Save"}
                         </button>
+                        {editingKey[provider.envKey] && (
+                          <button
+                            onClick={() => setEditingKey((prev) => ({ ...prev, [provider.envKey]: false }))}
+                            className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-gray-300 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -676,7 +759,26 @@ export default function ModelsPage() {
               <p className="text-xs text-gray-400 mb-3">
                 Via openrouter.ai &mdash; access 290+ models with one API key. 5.5% fee on credit purchase. No per-token markup.
               </p>
-              {!provider.keyConfigured && (
+              {provider.keyConfigured && !editingKey[provider.envKey] ? (
+                <div className="flex items-center justify-between p-2 bg-gray-800/50 rounded border border-gray-700">
+                  <span className="text-xs text-gray-400 font-mono">{provider.envKey} = ••••••••</span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setEditingKey((prev) => ({ ...prev, [provider.envKey]: true }))}
+                      className="px-2.5 py-1 text-xs text-blue-400 hover:text-blue-300 border border-gray-700 rounded transition-colors"
+                    >
+                      Update
+                    </button>
+                    <button
+                      onClick={() => removeProviderKey(provider.envKey)}
+                      disabled={removingKey === provider.envKey}
+                      className="px-2.5 py-1 text-xs text-red-400 hover:text-red-300 disabled:text-gray-600 border border-gray-700 rounded transition-colors"
+                    >
+                      {removingKey === provider.envKey ? "Removing..." : "Remove"}
+                    </button>
+                  </div>
+                </div>
+              ) : (
                 <div className="flex gap-2">
                   <input
                     type="password"
@@ -693,6 +795,14 @@ export default function ModelsPage() {
                   >
                     {savingKey === provider.envKey ? "Saving..." : "Save"}
                   </button>
+                  {editingKey[provider.envKey] && (
+                    <button
+                      onClick={() => setEditingKey((prev) => ({ ...prev, [provider.envKey]: false }))}
+                      className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-gray-300 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  )}
                 </div>
               )}
             </section>

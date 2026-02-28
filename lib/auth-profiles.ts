@@ -39,3 +39,19 @@ export function registerAuthProfile(envKey: string, apiKey: string) {
   };
   writeFileSync(authPath, JSON.stringify(store, null, 2) + "\n");
 }
+
+export function removeAuthProfile(envKey: string) {
+  const provider = PROVIDER_ENV_MAP[envKey];
+  if (!provider) return;
+
+  const authPath = join(openclawHome(), "agents", "main", "agent", "auth-profiles.json");
+  let store: { version: number; profiles: Record<string, unknown> };
+  try {
+    store = JSON.parse(readFileSync(authPath, "utf-8"));
+  } catch {
+    return;
+  }
+
+  delete store.profiles[`${provider}:manual`];
+  writeFileSync(authPath, JSON.stringify(store, null, 2) + "\n");
+}
