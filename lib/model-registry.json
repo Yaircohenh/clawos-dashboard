@@ -88,9 +88,21 @@
       "consoleUrl": "https://openrouter.ai/keys",
       "color": { "bg": "bg-pink-900/50", "text": "text-pink-400", "border": "border-pink-800" },
       "models": [
-        { "id": "auto", "label": "Auto (best available)", "tier": "standard", "pricing": { "input": 0, "output": 0 } }
+        { "id": "auto", "label": "Auto (best available)", "tier": "standard", "pricing": { "input": 0, "output": 0 } },
+        { "id": "anthropic/claude-opus-4-6", "label": "Claude Opus 4.6", "tier": "premium", "pricing": { "input": 5.00, "output": 25.00 } },
+        { "id": "anthropic/claude-sonnet-4-6", "label": "Claude Sonnet 4.6", "tier": "standard", "pricing": { "input": 3.00, "output": 15.00 } },
+        { "id": "anthropic/claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5", "tier": "budget", "pricing": { "input": 1.00, "output": 5.00 } },
+        { "id": "google/gemini-2.5-pro", "label": "Gemini 2.5 Pro", "tier": "premium", "pricing": { "input": 1.25, "output": 10.00 } },
+        { "id": "google/gemini-2.5-flash", "label": "Gemini 2.5 Flash", "tier": "budget", "pricing": { "input": 0.30, "output": 2.50 } },
+        { "id": "openai/gpt-4o", "label": "GPT-4o", "tier": "premium", "pricing": { "input": 2.50, "output": 10.00 } },
+        { "id": "openai/o3-mini", "label": "o3-mini", "tier": "standard", "pricing": { "input": 1.10, "output": 4.40 } },
+        { "id": "x-ai/grok-3", "label": "Grok 3", "tier": "premium", "pricing": { "input": 3.00, "output": 15.00 } },
+        { "id": "deepseek/deepseek-r1", "label": "DeepSeek R1", "tier": "standard", "pricing": { "input": 0.55, "output": 2.19 } },
+        { "id": "deepseek/deepseek-chat", "label": "DeepSeek V3", "tier": "budget", "pricing": { "input": 0.27, "output": 1.10 } },
+        { "id": "meta-llama/llama-4-maverick", "label": "Llama 4 Maverick", "tier": "standard", "pricing": { "input": 0.20, "output": 0.60 } },
+        { "id": "qwen/qwen3-235b-a22b", "label": "Qwen3 235B", "tier": "standard", "pricing": { "input": 0.14, "output": 0.34 } }
       ],
-      "agentTiers": { "flagship": "auto", "standard": "auto", "light": "auto" },
+      "agentTiers": { "flagship": "anthropic/claude-sonnet-4-6", "standard": "anthropic/claude-haiku-4-5-20251001", "light": "deepseek/deepseek-chat" },
       "isGateway": true
     }
   ]
