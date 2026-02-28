@@ -260,6 +260,39 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (keyId.startsWith("provider:moonshot")) {
+      try {
+        const res = await fetch("https://api.moonshot.ai/v1/models", {
+          headers: { Authorization: `Bearer ${process.env.MOONSHOT_API_KEY || ""}` },
+        });
+        return NextResponse.json({ success: true, valid: res.ok, status: res.status });
+      } catch (err: unknown) {
+        return NextResponse.json({ success: false, error: err instanceof Error ? err.message : "Connection failed" });
+      }
+    }
+
+    if (keyId.startsWith("provider:stepfun")) {
+      try {
+        const res = await fetch("https://api.stepfun.ai/v1/models", {
+          headers: { Authorization: `Bearer ${process.env.STEP_API_KEY || ""}` },
+        });
+        return NextResponse.json({ success: true, valid: res.ok, status: res.status });
+      } catch (err: unknown) {
+        return NextResponse.json({ success: false, error: err instanceof Error ? err.message : "Connection failed" });
+      }
+    }
+
+    if (keyId.startsWith("provider:openrouter")) {
+      try {
+        const res = await fetch("https://openrouter.ai/api/v1/models", {
+          headers: { Authorization: `Bearer ${process.env.OPENROUTER_API_KEY || ""}` },
+        });
+        return NextResponse.json({ success: true, valid: res.ok, status: res.status });
+      } catch (err: unknown) {
+        return NextResponse.json({ success: false, error: err instanceof Error ? err.message : "Connection failed" });
+      }
+    }
+
     if (keyId === "integration:github") {
       try {
         execFileSync("gh", ["auth", "status"], {

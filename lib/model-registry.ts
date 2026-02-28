@@ -2,10 +2,16 @@ import registryData from "./model-registry.json";
 
 // ── Types ─────────────────────────────────────────────────────────────
 
+export interface ModelPricing {
+  input: number;   // $/M tokens
+  output: number;  // $/M tokens
+}
+
 export interface ModelEntry {
   id: string;
   label: string;
   tier: "premium" | "standard" | "budget";
+  pricing?: ModelPricing;
 }
 
 export interface ProviderColor {
@@ -29,6 +35,7 @@ export interface Provider {
   color: ProviderColor;
   models: ModelEntry[];
   agentTiers: AgentTiers;
+  isGateway?: boolean;
 }
 
 export interface ModelRegistry {
@@ -52,6 +59,7 @@ export interface FlatModel {
   tier: "premium" | "standard" | "budget";
   providerId: string;
   providerName: string;
+  pricing?: ModelPricing;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -79,6 +87,9 @@ export function detectProviderFromRegistry(modelId: string): string {
   if (/gpt|o1|o3|openai/i.test(modelId)) return "OpenAI";
   if (/grok|xai/i.test(modelId)) return "xAI";
   if (/gemini|google/i.test(modelId)) return "Google";
+  if (/kimi|moonshot/i.test(modelId)) return "Moonshot AI";
+  if (/step/i.test(modelId)) return "StepFun";
+  if (/openrouter/i.test(modelId)) return "OpenRouter";
   return "Other";
 }
 
@@ -94,8 +105,31 @@ export function getAllModelsFlat(): FlatModel[] {
         tier: model.tier,
         providerId: provider.id,
         providerName: provider.name,
+        pricing: model.pricing,
       });
     }
   }
   return result;
+}
+
+/** Get pricing for a model by its full ID (e.g. "anthropic/claude-sonnet-4-6"). */
+export function getModelPricing(fullId: string): ModelPricing | undefined {
+  const registry = getModelRegistry();
+  for (const p of registry.providers) {
+    for (const m of p.models) {
+      if (`${p.prefix}/${m.id}` === fullId) return m.pricing;
+    }
+  }
+  return undefined;
+}
+
+/** Return all models sorted by output price (cheapest first), excluding gateways. */
+export function getAllModelsByPrice(): FlatModel[] {
+  return getAllModelsFlat()
+    .filter(m => !getModelRegistry().providers.find(p => p.id === m.providerId)?.isGateway)
+    .sort((a, b) => {
+      const pa = a.pricing;
+      const pb = b.pricing;
+      return (pa?.output || 0) - (pb?.output || 0);
+    });
 }

@@ -8,9 +8,9 @@
       "consoleUrl": "https://console.anthropic.com/settings/keys",
       "color": { "bg": "bg-purple-900/50", "text": "text-purple-400", "border": "border-purple-800" },
       "models": [
-        { "id": "claude-opus-4-6", "label": "Claude Opus 4.6", "tier": "premium" },
-        { "id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6", "tier": "standard" },
-        { "id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5", "tier": "budget" }
+        { "id": "claude-opus-4-6", "label": "Claude Opus 4.6", "tier": "premium", "pricing": { "input": 5.00, "output": 25.00 } },
+        { "id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6", "tier": "standard", "pricing": { "input": 3.00, "output": 15.00 } },
+        { "id": "claude-haiku-4-5-20251001", "label": "Claude Haiku 4.5", "tier": "budget", "pricing": { "input": 1.00, "output": 5.00 } }
       ],
       "agentTiers": { "flagship": "claude-opus-4-6", "standard": "claude-sonnet-4-6", "light": "claude-haiku-4-5-20251001" }
     },
@@ -22,10 +22,10 @@
       "consoleUrl": "https://platform.openai.com/api-keys",
       "color": { "bg": "bg-green-900/50", "text": "text-green-400", "border": "border-green-800" },
       "models": [
-        { "id": "gpt-4o", "label": "GPT-4o", "tier": "premium" },
-        { "id": "gpt-4o-mini", "label": "GPT-4o Mini", "tier": "budget" },
-        { "id": "o1", "label": "o1", "tier": "premium" },
-        { "id": "o3-mini", "label": "o3-mini", "tier": "standard" }
+        { "id": "gpt-4o", "label": "GPT-4o", "tier": "premium", "pricing": { "input": 2.50, "output": 10.00 } },
+        { "id": "gpt-4o-mini", "label": "GPT-4o Mini", "tier": "budget", "pricing": { "input": 0.15, "output": 0.60 } },
+        { "id": "o1", "label": "o1", "tier": "premium", "pricing": { "input": 15.00, "output": 60.00 } },
+        { "id": "o3-mini", "label": "o3-mini", "tier": "standard", "pricing": { "input": 1.10, "output": 4.40 } }
       ],
       "agentTiers": { "flagship": "gpt-4o", "standard": "gpt-4o", "light": "gpt-4o-mini" }
     },
@@ -37,8 +37,8 @@
       "consoleUrl": "https://console.x.ai",
       "color": { "bg": "bg-blue-900/50", "text": "text-blue-400", "border": "border-blue-800" },
       "models": [
-        { "id": "grok-4-1-fast", "label": "Grok 4.1 Fast", "tier": "standard" },
-        { "id": "grok-3", "label": "Grok 3", "tier": "premium" }
+        { "id": "grok-4-1-fast", "label": "Grok 4.1 Fast", "tier": "standard", "pricing": { "input": 0.20, "output": 0.50 } },
+        { "id": "grok-3", "label": "Grok 3", "tier": "premium", "pricing": { "input": 3.00, "output": 15.00 } }
       ],
       "agentTiers": { "flagship": "grok-3", "standard": "grok-4-1-fast", "light": "grok-4-1-fast" }
     },
@@ -50,10 +50,48 @@
       "consoleUrl": "https://aistudio.google.com/app/apikey",
       "color": { "bg": "bg-yellow-900/50", "text": "text-yellow-400", "border": "border-yellow-800" },
       "models": [
-        { "id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro", "tier": "premium" },
-        { "id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "tier": "budget" }
+        { "id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro", "tier": "premium", "pricing": { "input": 1.25, "output": 10.00 } },
+        { "id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "tier": "budget", "pricing": { "input": 0.30, "output": 2.50 } }
       ],
       "agentTiers": { "flagship": "gemini-2.5-pro", "standard": "gemini-2.5-flash", "light": "gemini-2.5-flash" }
+    },
+    {
+      "id": "moonshot",
+      "name": "Moonshot AI",
+      "prefix": "moonshot",
+      "envKey": "MOONSHOT_API_KEY",
+      "consoleUrl": "https://platform.moonshot.ai/console/api-keys",
+      "color": { "bg": "bg-cyan-900/50", "text": "text-cyan-400", "border": "border-cyan-800" },
+      "models": [
+        { "id": "kimi-k2.5", "label": "Kimi K2.5", "tier": "standard", "pricing": { "input": 0.60, "output": 3.00 } },
+        { "id": "kimi-k2", "label": "Kimi K2", "tier": "budget", "pricing": { "input": 0.39, "output": 1.90 } }
+      ],
+      "agentTiers": { "flagship": "kimi-k2.5", "standard": "kimi-k2.5", "light": "kimi-k2" }
+    },
+    {
+      "id": "stepfun",
+      "name": "StepFun",
+      "prefix": "stepfun",
+      "envKey": "STEP_API_KEY",
+      "consoleUrl": "https://platform.stepfun.ai/",
+      "color": { "bg": "bg-orange-900/50", "text": "text-orange-400", "border": "border-orange-800" },
+      "models": [
+        { "id": "step-3.5-flash", "label": "Step 3.5 Flash", "tier": "budget", "pricing": { "input": 0.10, "output": 0.30 } }
+      ],
+      "agentTiers": { "flagship": "step-3.5-flash", "standard": "step-3.5-flash", "light": "step-3.5-flash" }
+    },
+    {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "prefix": "openrouter",
+      "envKey": "OPENROUTER_API_KEY",
+      "consoleUrl": "https://openrouter.ai/keys",
+      "color": { "bg": "bg-pink-900/50", "text": "text-pink-400", "border": "border-pink-800" },
+      "models": [
+        { "id": "auto", "label": "Auto (best available)", "tier": "standard", "pricing": { "input": 0, "output": 0 } }
+      ],
+      "agentTiers": { "flagship": "auto", "standard": "auto", "light": "auto" },
+      "isGateway": true
     }
   ]
 }

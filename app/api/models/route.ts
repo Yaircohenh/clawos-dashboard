@@ -162,6 +162,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    case "refreshPricing": {
+      const registry = getModelRegistry();
+      const pricing: Record<string, { input: number; output: number }> = {};
+      for (const p of registry.providers) {
+        if ((p as any).isGateway) continue;
+        for (const m of p.models) {
+          if ((m as any).pricing) {
+            pricing[`${p.prefix}/${m.id}`] = (m as any).pricing;
+          }
+        }
+      }
+      return NextResponse.json({ pricing, source: "registry", updatedAt: new Date().toISOString() });
+    }
+
     default:
       return NextResponse.json({ error: "Unknown action" }, { status: 400 });
   }
