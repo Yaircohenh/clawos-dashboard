@@ -102,7 +102,7 @@ export function Sidebar() {
           <span>🚪</span>
           <span>Logout</span>
         </button>
-        <div className="px-3 text-xs text-gray-500">ClawOS v1.0</div>
+        <div className="px-3 text-xs text-gray-500">ClawOS {process.env.NEXT_PUBLIC_VERSION}</div>
       </div>
     </aside>
   );
