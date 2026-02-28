@@ -7,6 +7,7 @@ import { openclawConfigPath, openclawHome, infraDir, envFilePath } from "@/lib/p
 import { getModelRegistry } from "@/lib/model-registry";
 import { createSession } from "@/lib/auth";
 import { registerAuthProfile } from "@/lib/auth-profiles";
+import { setAgentModels } from "@/lib/agent-models";
 
 export const dynamic = "force-dynamic";
 
@@ -42,37 +43,6 @@ function runFile(bin: string, args: string[]): string {
     if (err?.stdout) return (err.stdout as string).trim();
     return "";
   }
-}
-
-// Agent ID → tier mapping
-const AGENT_TIERS: Record<string, "flagship" | "standard" | "light"> = {
-  main: "flagship",
-  ninja: "standard",
-  ops: "standard",
-  cto: "standard",
-  legal: "standard",
-  accounting: "light",
-  finance: "light",
-  marketing: "light",
-};
-
-function setAgentModels(providerId: string) {
-  const registry = getModelRegistry();
-  const provider = registry.providers.find((p) => p.id === providerId);
-  if (!provider?.agentTiers) return;
-
-  const config = readConfig();
-  if (!config.agents?.list) return;
-
-  for (const agent of config.agents.list) {
-    const tier = AGENT_TIERS[agent.id];
-    if (!tier) continue;
-    const modelId = provider.agentTiers[tier];
-    if (modelId) {
-      agent.model = `${provider.prefix}/${modelId}`;
-    }
-  }
-  writeConfig(config);
 }
 
 function restartGateway() {

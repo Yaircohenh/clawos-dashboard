@@ -4,6 +4,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { openclawConfigPath, dashboardModelsPath, envFilePath } from "@/lib/paths";
 import { detectProviderFromRegistry, getModelRegistry } from "@/lib/model-registry";
 import { registerAuthProfile, removeAuthProfile } from "@/lib/auth-profiles";
+import { setAgentModels } from "@/lib/agent-models";
 
 export const dynamic = "force-dynamic";
 
@@ -160,6 +161,12 @@ export async function POST(request: NextRequest) {
 
         // Register key with gateway's auth-profiles so internal agent runner finds it
         registerAuthProfile(envKey, value);
+
+        // Update all agent models to this provider's tier-appropriate models
+        const provider = registry.providers.find((p) => p.envKey === envKey);
+        if (provider) {
+          setAgentModels(provider.id);
+        }
 
         return NextResponse.json({ success: true });
       } catch (err: unknown) {
