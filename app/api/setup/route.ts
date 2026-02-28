@@ -312,6 +312,10 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Enable/disable agents ────────────────────────────────────────
+    // Note: OpenClaw doesn't support an "enabled" key on agents.
+    // Disabled agents are removed from the list; re-enabling would need
+    // to re-add them from the infra config. For now, we accept the list
+    // but only remove agents the user unchecked (main is always kept).
     case "enableAgents": {
       const agentIds = body.agentIds as string[];
       if (!Array.isArray(agentIds)) {
@@ -324,12 +328,13 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ error: "No agents configured" }, { status: 400 });
         }
 
+        // Keep main + any agent the user checked
+        config.agents.list = config.agents.list.filter(
+          (a: any) => a.id === "main" || a.default || agentIds.includes(a.id)
+        );
+        // Clean up any stale "enabled" keys from previous versions
         for (const agent of config.agents.list) {
-          if (agent.id === "main") {
-            agent.enabled = true; // main always enabled
-          } else {
-            agent.enabled = agentIds.includes(agent.id);
-          }
+          delete agent.enabled;
         }
         writeConfig(config);
 
@@ -392,6 +397,17 @@ export async function POST(request: NextRequest) {
           setupMarkerPath(),
           JSON.stringify({ completedAt: new Date().toISOString() }) + "\n",
         );
+
+        // Strip any keys OpenClaw doesn't recognize before restarting
+        try {
+          const config = readConfig();
+          if (config.agents?.list) {
+            for (const agent of config.agents.list) {
+              delete agent.enabled;
+            }
+            writeConfig(config);
+          }
+        } catch { /* ok */ }
 
         // Restart gateway so it picks up newly saved API keys
         restartGateway();
