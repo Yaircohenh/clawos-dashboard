@@ -10,7 +10,7 @@ import {
 } from "fs";
 import { join } from "path";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { agentsRuntimeDir } from "@/lib/paths";
+import { agentsRuntimeDir, openclawConfigPath } from "@/lib/paths";
 
 export const dynamic = "force-dynamic";
 
@@ -209,8 +209,17 @@ export async function POST(request: NextRequest) {
         args.push("--session-id", sessionId);
       }
 
+      // Pass gateway auth token so CLI can connect
+      let gwToken = process.env.OPENCLAW_GATEWAY_TOKEN || "";
+      if (!gwToken) {
+        try {
+          const oc = JSON.parse(readFileSync(openclawConfigPath(), "utf-8"));
+          gwToken = oc?.gateway?.auth?.token || "";
+        } catch { /* ok */ }
+      }
+
       const proc = spawn("openclaw", args, {
-        env: { ...process.env, NO_COLOR: "1" },
+        env: { ...process.env, NO_COLOR: "1", ...(gwToken ? { OPENCLAW_GATEWAY_TOKEN: gwToken } : {}) },
         timeout: 120000,
       });
 
