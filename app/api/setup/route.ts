@@ -43,6 +43,41 @@ function runFile(bin: string, args: string[]): string {
   }
 }
 
+// ── Provider key → auth-profiles.json mapping ───────────────────────
+// The gateway's internal agent runner looks for keys in auth-profiles.json
+// before falling back to env vars. We write directly to ensure keys are found.
+
+const PROVIDER_ENV_MAP: Record<string, string> = {
+  ANTHROPIC_API_KEY: "anthropic",
+  OPENAI_API_KEY: "openai",
+  XAI_API_KEY: "xai",
+  GOOGLE_API_KEY: "google",
+};
+
+function registerAuthProfile(envKey: string, apiKey: string) {
+  const provider = PROVIDER_ENV_MAP[envKey];
+  if (!provider) return;
+
+  const authDir = join(openclawHome(), "agents", "main", "agent");
+  if (!existsSync(authDir)) mkdirSync(authDir, { recursive: true });
+
+  const authPath = join(authDir, "auth-profiles.json");
+  let store: { version: number; profiles: Record<string, unknown> };
+  try {
+    store = JSON.parse(readFileSync(authPath, "utf-8"));
+  } catch {
+    store = { version: 1, profiles: {} };
+  }
+
+  const profileId = `${provider}:manual`;
+  store.profiles[profileId] = {
+    type: "api_key",
+    provider,
+    key: apiKey,
+  };
+  writeFileSync(authPath, JSON.stringify(store, null, 2) + "\n");
+}
+
 // Agent ID → tier mapping
 const AGENT_TIERS: Record<string, "flagship" | "standard" | "light"> = {
   main: "flagship",
@@ -241,6 +276,9 @@ export async function POST(request: NextRequest) {
         lines.push(`${envKey}=${value}`);
         writeFileSync(envPath, lines.filter((l) => l.trim()).join("\n") + "\n");
         process.env[envKey] = value;
+
+        // Register key with gateway's auth-profiles so internal agent runner finds it
+        registerAuthProfile(envKey, value);
 
         // Set all agent models to this provider's tier-appropriate models
         const provider = registry.providers.find((p) => p.envKey === envKey);

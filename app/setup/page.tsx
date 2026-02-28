@@ -334,6 +334,22 @@ function SetupWizard() {
     );
   }
 
+  // ── Launching overlay ────────────────────────────────────────────
+
+  if (launching) {
+    return (
+      <div className="fixed inset-0 z-50 bg-gray-950 flex items-center justify-center">
+        <div className="text-center space-y-6">
+          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" />
+          <div className="space-y-2">
+            <h2 className="text-xl font-semibold text-white">Starting ClawOS...</h2>
+            <p className="text-gray-400">Restarting gateway with your API keys</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ── Render ────────────────────────────────────────────────────────
 
   return (
