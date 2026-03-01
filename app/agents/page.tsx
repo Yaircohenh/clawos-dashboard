@@ -160,7 +160,7 @@ export default function AgentsPage() {
     });
     if (res.ok) {
       setAgents((prev) => prev.map((a) => (a.id === agentId ? { ...a, model } : a)));
-      toast.success(`Model updated to ${model}`);
+      toast.success(`Model updated to ${model}. Gateway restarting...`);
     } else { toast.error("Failed to update model"); }
   }
 

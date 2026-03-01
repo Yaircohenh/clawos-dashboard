@@ -3,6 +3,7 @@ import { execFileSync } from "child_process";
 import { readFileSync, writeFileSync, mkdirSync, cpSync, rmSync } from "fs";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { openclawConfigPath, agentDir, agentsBackupDir } from "@/lib/paths";
+import { restartGateway } from "@/lib/gateway";
 
 export const dynamic = "force-dynamic";
 
@@ -102,6 +103,9 @@ export async function POST(request: NextRequest) {
         }
         agents[agentIndex].model = model;
         writeConfig(config);
+
+        // Restart gateway so it picks up the new model assignment
+        try { restartGateway(); } catch { /* best-effort */ }
 
         return NextResponse.json({ success: true, model });
       }
