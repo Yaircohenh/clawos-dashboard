@@ -16,15 +16,9 @@ export const PROVIDER_ENV_MAP: Record<string, string> = {
 };
 
 /**
- * Check if a provider key is available from any persistent source.
- * Checks: process.env → .env file → auth-profiles.json.
- * Hydrates process.env if found on disk so subsequent checks are fast.
+ * Read a key value from the .env file on disk (returns empty string if not found).
  */
-export function isProviderKeyAvailable(envKey: string): boolean {
-  // 1. Already in memory
-  if (process.env[envKey]) return true;
-
-  // 2. Check .env file on disk
+function readEnvKey(envKey: string): string {
   try {
     const content = readFileSync(envFilePath(), "utf-8");
     for (const line of content.split("\n")) {
@@ -32,30 +26,61 @@ export function isProviderKeyAvailable(envKey: string): boolean {
       if (!trimmed || trimmed.startsWith("#")) continue;
       const eq = trimmed.indexOf("=");
       if (eq > 0 && trimmed.slice(0, eq) === envKey) {
-        const value = trimmed.slice(eq + 1);
-        if (value) {
-          process.env[envKey] = value;
-          return true;
-        }
+        return trimmed.slice(eq + 1);
       }
     }
   } catch { /* .env may not exist */ }
+  return "";
+}
 
-  // 3. Check auth-profiles.json for a matching provider profile
+/**
+ * Write or update a key in the .env file on disk.
+ */
+function writeEnvKey(envKey: string, value: string) {
+  const envPath = envFilePath();
+  const dir = envPath.replace(/\/[^/]+$/, "");
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  let content = "";
+  try { content = readFileSync(envPath, "utf-8"); } catch { /* ok */ }
+  const lines = content.split("\n").filter((l) => !l.startsWith(`${envKey}=`));
+  lines.push(`${envKey}=${value}`);
+  writeFileSync(envPath, lines.filter((l) => l.trim()).join("\n") + "\n");
+}
+
+/**
+ * Read a key from auth-profiles.json (returns empty string if not found).
+ */
+function readAuthProfileKey(envKey: string): string {
   const provider = PROVIDER_ENV_MAP[envKey];
-  if (provider) {
-    try {
-      const authPath = join(openclawHome(), "agents", "main", "agent", "auth-profiles.json");
-      const store = JSON.parse(readFileSync(authPath, "utf-8"));
-      const profile = store.profiles?.[`${provider}:manual`];
-      if (profile?.key) {
-        process.env[envKey] = profile.key;
-        return true;
-      }
-    } catch { /* auth-profiles may not exist */ }
-  }
+  if (!provider) return "";
+  try {
+    const authPath = join(openclawHome(), "agents", "main", "agent", "auth-profiles.json");
+    const store = JSON.parse(readFileSync(authPath, "utf-8"));
+    return store.profiles?.[`${provider}:manual`]?.key || "";
+  } catch { return ""; }
+}
 
-  return false;
+/**
+ * Check if a provider key is available from any persistent source.
+ * Checks: process.env → .env file → auth-profiles.json.
+ * Auto-syncs keys across all stores so upgrades work seamlessly.
+ */
+export function isProviderKeyAvailable(envKey: string): boolean {
+  // Gather key from all sources
+  const fromEnv = process.env[envKey] || "";
+  const fromDisk = readEnvKey(envKey);
+  const fromAuth = readAuthProfileKey(envKey);
+
+  // Pick the first available value
+  const key = fromEnv || fromDisk || fromAuth;
+  if (!key) return false;
+
+  // Sync to all stores that are missing it
+  if (!fromEnv) process.env[envKey] = key;
+  if (!fromDisk) { try { writeEnvKey(envKey, key); } catch { /* best-effort */ } }
+  if (!fromAuth) { try { registerAuthProfile(envKey, key); } catch { /* best-effort */ } }
+
+  return true;
 }
 
 export function registerAuthProfile(envKey: string, apiKey: string) {
