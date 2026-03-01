@@ -142,7 +142,18 @@ export default function AgentsPage() {
 
   useEffect(() => { fetchAgents(); fetchScores(); fetchRegistry(); }, [fetchAgents, fetchScores, fetchRegistry]);
 
+  function getProviderForModel(model: string): RegistryProvider | undefined {
+    return registryProviders.find((p) => model.startsWith(`${p.prefix}/`));
+  }
+
   async function handleModelChange(agentId: string, model: string) {
+    // Block if provider has no key configured
+    const provider = getProviderForModel(model);
+    if (provider && !provider.keyConfigured) {
+      toast.error(`No API key for ${provider.name}. Configure it on the Models page.`);
+      return;
+    }
+
     const res = await fetch("/api/agents", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "setModel", agentId, model }),
@@ -251,18 +262,20 @@ export default function AgentsPage() {
             <input value={addForm.name} onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))} placeholder="Display Name" className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500" />
             <input value={addForm.emoji} onChange={(e) => setAddForm((f) => ({ ...f, emoji: e.target.value }))} placeholder="Emoji" className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500" />
             <select value={addForm.model} onChange={(e) => setAddForm((f) => ({ ...f, model: e.target.value }))} className="px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500">
-              {registryProviders.length > 0 ? (
-                registryProviders.map((p) => (
-                  <optgroup key={p.id} label={p.name}>
-                    {p.models.map((m) => {
-                      const fullId = `${p.prefix}/${m.id}`;
-                      return <option key={fullId} value={fullId}>{m.label}</option>;
-                    })}
-                  </optgroup>
-                ))
-              ) : (
-                registryModels.map((m) => <option key={m.fullId} value={m.fullId}>{m.label} ({m.providerName})</option>)
-              )}
+              {(() => {
+                const configuredProviders = registryProviders.filter((p) => p.keyConfigured);
+                if (configuredProviders.length > 0) {
+                  return configuredProviders.map((p) => (
+                    <optgroup key={p.id} label={p.name}>
+                      {p.models.map((m) => {
+                        const fullId = `${p.prefix}/${m.id}`;
+                        return <option key={fullId} value={fullId}>{m.label}</option>;
+                      })}
+                    </optgroup>
+                  ));
+                }
+                return registryModels.map((m) => <option key={m.fullId} value={m.fullId}>{m.label} ({m.providerName})</option>);
+              })()}
             </select>
           </div>
           <div className="flex gap-2">
@@ -422,22 +435,53 @@ export default function AgentsPage() {
               <div className="relative">
                 <select value={agent.model} onChange={(e) => handleModelChange(agent.id, e.target.value)}
                   className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500 appearance-none cursor-pointer pr-8">
-                  {!registryModels.some((m) => m.fullId === agent.model) && <option value={agent.model}>{agent.model}</option>}
-                  {registryProviders.length > 0 ? (
-                    registryProviders.map((p) => (
-                      <optgroup key={p.id} label={p.name}>
-                        {p.models.map((m) => {
-                          const fullId = `${p.prefix}/${m.id}`;
-                          return <option key={fullId} value={fullId}>{m.label}</option>;
-                        })}
-                      </optgroup>
-                    ))
-                  ) : (
-                    registryModels.map((m) => <option key={m.fullId} value={m.fullId}>{m.label} ({m.providerName})</option>)
-                  )}
+                  {(() => {
+                    const configuredProviders = registryProviders.filter((p) => p.keyConfigured);
+                    const currentProvider = getProviderForModel(agent.model);
+                    const currentInConfigured = currentProvider?.keyConfigured;
+                    // Show agent's current model even if its provider is unconfigured
+                    if (!currentInConfigured && agent.model) {
+                      const currentLabel = registryModels.find((m) => m.fullId === agent.model)?.label || agent.model;
+                      return (
+                        <>
+                          <option value={agent.model}>{currentLabel} (no key)</option>
+                          {configuredProviders.map((p) => (
+                            <optgroup key={p.id} label={p.name}>
+                              {p.models.map((m) => {
+                                const fullId = `${p.prefix}/${m.id}`;
+                                return <option key={fullId} value={fullId}>{m.label}</option>;
+                              })}
+                            </optgroup>
+                          ))}
+                        </>
+                      );
+                    }
+                    if (configuredProviders.length > 0) {
+                      return configuredProviders.map((p) => (
+                        <optgroup key={p.id} label={p.name}>
+                          {p.models.map((m) => {
+                            const fullId = `${p.prefix}/${m.id}`;
+                            return <option key={fullId} value={fullId}>{m.label}</option>;
+                          })}
+                        </optgroup>
+                      ));
+                    }
+                    return registryModels.map((m) => <option key={m.fullId} value={m.fullId}>{m.label} ({m.providerName})</option>);
+                  })()}
                 </select>
                 <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-xs">▼</span>
               </div>
+              {(() => {
+                const currentProvider = getProviderForModel(agent.model);
+                if (currentProvider && !currentProvider.keyConfigured) {
+                  return (
+                    <a href="/models" className="text-xs text-amber-400 hover:text-amber-300 mt-1 inline-block">
+                      No API key for {currentProvider.name}. Configure key &rarr;
+                    </a>
+                  );
+                }
+                return null;
+              })()}
             </div>
 
             <div className="space-y-2 text-sm mb-4">

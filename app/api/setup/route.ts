@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, openSync, closeSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
-import { execFileSync, spawn, type SpawnOptions } from "child_process";
+import { execFileSync } from "child_process";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { openclawConfigPath, openclawHome, infraDir, envFilePath } from "@/lib/paths";
 import { getModelRegistry } from "@/lib/model-registry";
 import { createSession } from "@/lib/auth";
-import { registerAuthProfile } from "@/lib/auth-profiles";
+import { registerAuthProfile, isProviderKeyAvailable } from "@/lib/auth-profiles";
 import { setAgentModels } from "@/lib/agent-models";
+import { restartGateway } from "@/lib/gateway";
 
 export const dynamic = "force-dynamic";
 
@@ -45,60 +46,6 @@ function runFile(bin: string, args: string[]): string {
   }
 }
 
-function restartGateway() {
-  // Load API keys from .env into spawn environment
-  const envPath = envFilePath();
-  const env = { ...process.env };
-  try {
-    const content = readFileSync(envPath, "utf-8");
-    for (const line of content.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      const eq = trimmed.indexOf("=");
-      if (eq > 0) {
-        env[trimmed.slice(0, eq)] = trimmed.slice(eq + 1);
-      }
-    }
-  } catch { /* .env may not exist yet */ }
-
-  // Stop existing gateway
-  try { execFileSync("openclaw", ["gateway", "stop"], { timeout: 5000, stdio: "ignore" }); } catch { /* ok */ }
-  try { execFileSync("pkill", ["-f", "openclaw gateway"], { timeout: 5000, stdio: "ignore" }); } catch { /* ok */ }
-  try { execFileSync("sleep", ["1"], { timeout: 3000 }); } catch { /* ok */ }
-
-  // Start gateway with updated keys
-  const installDir = envPath.replace(/\/\.env$/, "");
-  const logPath = join(installDir, "gateway.log");
-  const logFd = openSync(logPath, "a");
-
-  const opts: SpawnOptions = {
-    env,
-    detached: true,
-    stdio: ["ignore", logFd, logFd],
-  };
-  const gw = spawn("openclaw", [
-    "gateway", "run",
-    "--port", "18789",
-    "--bind", "lan",
-    "--auth", "token",
-    "--allow-unconfigured",
-  ], opts);
-  gw.unref();
-  closeSync(logFd);
-
-  // Update PID file so stop.sh can find the new gateway
-  if (gw.pid) {
-    const pidFile = join(installDir, ".clawos.pids");
-    try {
-      const lines = readFileSync(pidFile, "utf-8").trim().split("\n");
-      lines[0] = String(gw.pid);
-      writeFileSync(pidFile, lines.join("\n") + "\n");
-    } catch {
-      writeFileSync(pidFile, String(gw.pid) + "\n");
-    }
-  }
-}
-
 // ── GET: setup status ──────────────────────────────────────────────────
 
 export async function GET(request: Request) {
@@ -118,7 +65,7 @@ export async function GET(request: Request) {
     envKey: p.envKey,
     consoleUrl: p.consoleUrl,
     color: p.color,
-    keyConfigured: !!process.env[p.envKey],
+    keyConfigured: isProviderKeyAvailable(p.envKey),
   }));
 
   // Agents from config
@@ -216,10 +163,15 @@ export async function POST(request: NextRequest) {
         // Register key with gateway's auth-profiles so internal agent runner finds it
         registerAuthProfile(envKey, value);
 
-        // Set all agent models to this provider's tier-appropriate models
-        const provider = registry.providers.find((p) => p.envKey === envKey);
-        if (provider) {
-          setAgentModels(provider.id);
+        // Only auto-assign agent models during first-time setup (no agents have custom models yet)
+        const config = readConfig();
+        const agents = config?.agents?.list || [];
+        const hasCustomModels = agents.some((a: any) => a.model && a.model !== "default");
+        if (!hasCustomModels) {
+          const provider = registry.providers.find((p) => p.envKey === envKey);
+          if (provider) {
+            setAgentModels(provider.id);
+          }
         }
 
         return NextResponse.json({ success: true });

@@ -3,8 +3,8 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { openclawConfigPath, dashboardModelsPath, envFilePath } from "@/lib/paths";
 import { detectProviderFromRegistry, getModelRegistry } from "@/lib/model-registry";
-import { registerAuthProfile, removeAuthProfile } from "@/lib/auth-profiles";
-import { setAgentModels } from "@/lib/agent-models";
+import { registerAuthProfile, removeAuthProfile, isProviderKeyAvailable } from "@/lib/auth-profiles";
+import { restartGateway } from "@/lib/gateway";
 
 export const dynamic = "force-dynamic";
 
@@ -149,6 +149,9 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "API key required (max 500 chars)" }, { status: 400 });
       }
 
+      // Check if this is a NEW provider (not previously configured)
+      const wasConfigured = isProviderKeyAvailable(envKey);
+
       // Write to .env file
       const envPath = envFilePath();
       try {
@@ -162,13 +165,16 @@ export async function POST(request: NextRequest) {
         // Register key with gateway's auth-profiles so internal agent runner finds it
         registerAuthProfile(envKey, value);
 
-        // Update all agent models to this provider's tier-appropriate models
-        const provider = registry.providers.find((p) => p.envKey === envKey);
-        if (provider) {
-          setAgentModels(provider.id);
+        // Restart gateway only if this is a NEW provider (gateway needs to rebuild provider map)
+        let restarted = false;
+        if (!wasConfigured) {
+          try {
+            restartGateway();
+            restarted = true;
+          } catch { /* gateway restart is best-effort */ }
         }
 
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ success: true, restarted });
       } catch (err: unknown) {
         return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to save key" }, { status: 500 });
       }

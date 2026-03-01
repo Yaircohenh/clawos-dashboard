@@ -175,7 +175,12 @@ export default function ModelsPage() {
         body: JSON.stringify({ action: "addProviderKey", envKey, value }),
       });
       if (res.ok) {
-        toast.success("API key saved");
+        const data = await res.json();
+        if (data.restarted) {
+          toast.success("API key saved. Gateway restarting to enable new provider...");
+        } else {
+          toast.success("API key saved");
+        }
         setKeyInputs((prev) => ({ ...prev, [envKey]: "" }));
         setEditingKey((prev) => ({ ...prev, [envKey]: false }));
         fetchRegistry();
