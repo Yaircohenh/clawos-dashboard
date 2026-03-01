@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { execFileSync } from "child_process";
-import { readFileSync, writeFileSync, mkdirSync, cpSync, rmSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync, cpSync, rmSync, existsSync, renameSync } from "fs";
+import { join } from "path";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { openclawConfigPath, agentDir, agentsBackupDir } from "@/lib/paths";
+import { openclawConfigPath, agentDir, agentsBackupDir, agentsRuntimeDir } from "@/lib/paths";
 import { restartGateway } from "@/lib/gateway";
 
 export const dynamic = "force-dynamic";
@@ -101,13 +102,30 @@ export async function POST(request: NextRequest) {
             { status: 404 }
           );
         }
+        const prevModel = agents[agentIndex].model || "";
         agents[agentIndex].model = model;
         writeConfig(config);
+
+        // Reset session when switching models to avoid cross-provider format issues
+        // (e.g. Grok tool_use blocks rejected by Claude API)
+        let sessionReset = false;
+        if (prevModel !== model) {
+          try {
+            const sessDir = join(agentsRuntimeDir(), agentId, "sessions");
+            const sessJsonPath = join(sessDir, "sessions.json");
+            if (existsSync(sessJsonPath)) {
+              // Archive the sessions.json — gateway will create a fresh one
+              const backupName = `sessions.${Date.now()}.json`;
+              renameSync(sessJsonPath, join(sessDir, backupName));
+              sessionReset = true;
+            }
+          } catch { /* best-effort */ }
+        }
 
         // Restart gateway so it picks up the new model assignment
         try { restartGateway(); } catch { /* best-effort */ }
 
-        return NextResponse.json({ success: true, model });
+        return NextResponse.json({ success: true, model, sessionReset });
       }
 
       case "restart": {

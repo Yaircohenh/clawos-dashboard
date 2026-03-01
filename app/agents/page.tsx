@@ -159,8 +159,13 @@ export default function AgentsPage() {
       body: JSON.stringify({ action: "setModel", agentId, model }),
     });
     if (res.ok) {
+      const data = await res.json();
       setAgents((prev) => prev.map((a) => (a.id === agentId ? { ...a, model } : a)));
-      toast.success(`Model updated to ${model}. Gateway restarting...`);
+      if (data.sessionReset) {
+        toast.success(`Model updated to ${model}. Session reset — start a new chat.`);
+      } else {
+        toast.success(`Model updated to ${model}. Gateway restarting...`);
+      }
     } else { toast.error("Failed to update model"); }
   }
 
