@@ -72,6 +72,8 @@ export default function ModelsPage() {
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [editingKey, setEditingKey] = useState<Record<string, boolean>>({});
   const [removingKey, setRemovingKey] = useState<string | null>(null);
+  const [testingKey, setTestingKey] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<Record<string, { valid: boolean; message: string }>>({});
   const [activeTab, setActiveTab] = useState<"models" | "pricing">("models");
   const [sortField, setSortField] = useState<SortField>("output");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -216,6 +218,35 @@ export default function ModelsPage() {
       toast.error("Failed to remove key");
     } finally {
       setRemovingKey(null);
+    }
+  }
+
+  async function testProviderKey(envKey: string) {
+    const value = (keyInputs[envKey] || "").trim();
+    if (!value) { toast.error("Enter an API key first"); return; }
+    const provider = providers.find((p) => p.envKey === envKey);
+    if (!provider) return;
+    setTestingKey(envKey);
+    setTestResult((prev) => ({ ...prev, [envKey]: { valid: false, message: "Testing..." } }));
+    try {
+      const res = await fetch("/api/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "testProviderKey", providerId: provider.id, apiKey: value }),
+      });
+      const data = await res.json();
+      if (data.valid) {
+        setTestResult((prev) => ({ ...prev, [envKey]: { valid: true, message: "Key is valid" } }));
+        toast.success(`${provider.name} key is valid`);
+      } else {
+        setTestResult((prev) => ({ ...prev, [envKey]: { valid: false, message: `Invalid (HTTP ${data.status || "error"})` } }));
+        toast.error(`${provider.name} key is invalid`);
+      }
+    } catch {
+      setTestResult((prev) => ({ ...prev, [envKey]: { valid: false, message: "Connection failed" } }));
+      toast.error("Connection failed");
+    } finally {
+      setTestingKey(null);
     }
   }
 
@@ -478,11 +509,18 @@ export default function ModelsPage() {
                                 <input
                                   type="password"
                                   value={keyInputs[provider.envKey] || ""}
-                                  onChange={(e) => setKeyInputs((prev) => ({ ...prev, [provider.envKey]: e.target.value }))}
+                                  onChange={(e) => { setKeyInputs((prev) => ({ ...prev, [provider.envKey]: e.target.value })); setTestResult((prev) => { const n = { ...prev }; delete n[provider.envKey]; return n; }); }}
                                   onKeyDown={(e) => e.key === "Enter" && saveProviderKey(provider.envKey)}
                                   placeholder={`${provider.envKey}=sk-...`}
                                   className="flex-1 px-3 py-1.5 bg-gray-900 border border-gray-600 rounded text-sm text-white font-mono focus:outline-none focus:border-blue-500"
                                 />
+                                <button
+                                  onClick={() => testProviderKey(provider.envKey)}
+                                  disabled={testingKey === provider.envKey || !(keyInputs[provider.envKey] || "").trim()}
+                                  className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-600 text-white rounded text-xs transition-colors"
+                                >
+                                  {testingKey === provider.envKey ? "Testing..." : "Test"}
+                                </button>
                                 <button
                                   onClick={() => saveProviderKey(provider.envKey)}
                                   disabled={savingKey === provider.envKey || !(keyInputs[provider.envKey] || "").trim()}
@@ -499,6 +537,11 @@ export default function ModelsPage() {
                                   </button>
                                 )}
                               </div>
+                              {testResult[provider.envKey] && (
+                                <p className={`text-xs mt-2 ${testResult[provider.envKey].valid ? "text-green-400" : "text-red-400"}`}>
+                                  {testResult[provider.envKey].valid ? "\u2713" : "\u2717"} {testResult[provider.envKey].message}
+                                </p>
+                              )}
                             </>
                           )}
                         </div>
@@ -597,31 +640,45 @@ export default function ModelsPage() {
                         </div>
                       </div>
                     ) : (
-                      <div className="flex gap-2">
-                        <input
-                          type="password"
-                          value={keyInputs[provider.envKey] || ""}
-                          onChange={(e) => setKeyInputs((prev) => ({ ...prev, [provider.envKey]: e.target.value }))}
-                          onKeyDown={(e) => e.key === "Enter" && saveProviderKey(provider.envKey)}
-                          placeholder={`${provider.envKey}=sk-...`}
-                          className="flex-1 px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-sm text-white font-mono focus:outline-none focus:border-blue-500"
-                        />
-                        <button
-                          onClick={() => saveProviderKey(provider.envKey)}
-                          disabled={savingKey === provider.envKey || !(keyInputs[provider.envKey] || "").trim()}
-                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white rounded text-xs"
-                        >
-                          {savingKey === provider.envKey ? "Saving..." : "Save"}
-                        </button>
-                        {editingKey[provider.envKey] && (
+                      <>
+                        <div className="flex gap-2">
+                          <input
+                            type="password"
+                            value={keyInputs[provider.envKey] || ""}
+                            onChange={(e) => { setKeyInputs((prev) => ({ ...prev, [provider.envKey]: e.target.value })); setTestResult((prev) => { const n = { ...prev }; delete n[provider.envKey]; return n; }); }}
+                            onKeyDown={(e) => e.key === "Enter" && saveProviderKey(provider.envKey)}
+                            placeholder={`${provider.envKey}=sk-...`}
+                            className="flex-1 px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-sm text-white font-mono focus:outline-none focus:border-blue-500"
+                          />
                           <button
-                            onClick={() => setEditingKey((prev) => ({ ...prev, [provider.envKey]: false }))}
-                            className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-gray-300 transition-colors"
+                            onClick={() => testProviderKey(provider.envKey)}
+                            disabled={testingKey === provider.envKey || !(keyInputs[provider.envKey] || "").trim()}
+                            className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-600 text-white rounded text-xs transition-colors"
                           >
-                            Cancel
+                            {testingKey === provider.envKey ? "Testing..." : "Test"}
                           </button>
+                          <button
+                            onClick={() => saveProviderKey(provider.envKey)}
+                            disabled={savingKey === provider.envKey || !(keyInputs[provider.envKey] || "").trim()}
+                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white rounded text-xs"
+                          >
+                            {savingKey === provider.envKey ? "Saving..." : "Save"}
+                          </button>
+                          {editingKey[provider.envKey] && (
+                            <button
+                              onClick={() => setEditingKey((prev) => ({ ...prev, [provider.envKey]: false }))}
+                              className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-gray-300 transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </div>
+                        {testResult[provider.envKey] && (
+                          <p className={`text-xs mt-2 ${testResult[provider.envKey].valid ? "text-green-400" : "text-red-400"}`}>
+                            {testResult[provider.envKey].valid ? "\u2713" : "\u2717"} {testResult[provider.envKey].message}
+                          </p>
                         )}
-                      </div>
+                      </>
                     )}
                   </div>
                 ))}
@@ -784,31 +841,45 @@ export default function ModelsPage() {
                   </div>
                 </div>
               ) : (
-                <div className="flex gap-2">
-                  <input
-                    type="password"
-                    value={keyInputs[provider.envKey] || ""}
-                    onChange={(e) => setKeyInputs((prev) => ({ ...prev, [provider.envKey]: e.target.value }))}
-                    onKeyDown={(e) => e.key === "Enter" && saveProviderKey(provider.envKey)}
-                    placeholder={`${provider.envKey}=sk-...`}
-                    className="flex-1 px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-sm text-white font-mono focus:outline-none focus:border-blue-500"
-                  />
-                  <button
-                    onClick={() => saveProviderKey(provider.envKey)}
-                    disabled={savingKey === provider.envKey || !(keyInputs[provider.envKey] || "").trim()}
-                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white rounded text-xs"
-                  >
-                    {savingKey === provider.envKey ? "Saving..." : "Save"}
-                  </button>
-                  {editingKey[provider.envKey] && (
+                <>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={keyInputs[provider.envKey] || ""}
+                      onChange={(e) => { setKeyInputs((prev) => ({ ...prev, [provider.envKey]: e.target.value })); setTestResult((prev) => { const n = { ...prev }; delete n[provider.envKey]; return n; }); }}
+                      onKeyDown={(e) => e.key === "Enter" && saveProviderKey(provider.envKey)}
+                      placeholder={`${provider.envKey}=sk-...`}
+                      className="flex-1 px-3 py-1.5 bg-gray-800 border border-gray-600 rounded text-sm text-white font-mono focus:outline-none focus:border-blue-500"
+                    />
                     <button
-                      onClick={() => setEditingKey((prev) => ({ ...prev, [provider.envKey]: false }))}
-                      className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-gray-300 transition-colors"
+                      onClick={() => testProviderKey(provider.envKey)}
+                      disabled={testingKey === provider.envKey || !(keyInputs[provider.envKey] || "").trim()}
+                      className="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-600 text-white rounded text-xs transition-colors"
                     >
-                      Cancel
+                      {testingKey === provider.envKey ? "Testing..." : "Test"}
                     </button>
+                    <button
+                      onClick={() => saveProviderKey(provider.envKey)}
+                      disabled={savingKey === provider.envKey || !(keyInputs[provider.envKey] || "").trim()}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 text-white rounded text-xs"
+                    >
+                      {savingKey === provider.envKey ? "Saving..." : "Save"}
+                    </button>
+                    {editingKey[provider.envKey] && (
+                      <button
+                        onClick={() => setEditingKey((prev) => ({ ...prev, [provider.envKey]: false }))}
+                        className="px-2.5 py-1.5 text-xs text-gray-400 hover:text-gray-300 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                  {testResult[provider.envKey] && (
+                    <p className={`text-xs mt-2 ${testResult[provider.envKey].valid ? "text-green-400" : "text-red-400"}`}>
+                      {testResult[provider.envKey].valid ? "\u2713" : "\u2717"} {testResult[provider.envKey].message}
+                    </p>
                   )}
-                </div>
+                </>
               )}
             </section>
           ))}

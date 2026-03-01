@@ -126,6 +126,8 @@ export default function ChatPage() {
   const [pendingFiles, setPendingFiles] = useState<FileAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [modelWarnings, setModelWarnings] = useState<string[]>([]);
+  const [warningDismissed, setWarningDismissed] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -161,6 +163,33 @@ export default function ChatPage() {
       saveToStorage(conversations);
     }
   }, [conversations, hydrated]);
+
+  // Check for model/provider mismatches
+  useEffect(() => {
+    async function checkModelWarnings() {
+      try {
+        const [regRes, monRes] = await Promise.all([
+          fetch("/api/models/registry"),
+          fetch("/api/monitor"),
+        ]);
+        if (!regRes.ok || !monRes.ok) return;
+        const regData = await regRes.json();
+        const monData = await monRes.json();
+        const providers = regData.providers || [];
+        const agents = monData.agents || [];
+        const warns: string[] = [];
+        for (const agent of agents) {
+          const model = agent.model || "";
+          const provider = providers.find((p: { prefix: string }) => model.startsWith(`${p.prefix}/`));
+          if (provider && !provider.keyConfigured) {
+            warns.push(`${agent.name || agent.agentId || agent.id} uses ${model} but ${provider.name} has no API key`);
+          }
+        }
+        setModelWarnings(warns);
+      } catch { /* non-critical */ }
+    }
+    checkModelWarnings();
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -771,6 +800,25 @@ export default function ChatPage() {
             </button>
           </div>
         </div>
+
+        {/* Model mismatch warning */}
+        {modelWarnings.length > 0 && !warningDismissed && (
+          <div className="mx-6 mt-3 px-4 py-3 bg-amber-900/30 border border-amber-700/50 rounded-lg">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium text-amber-400 mb-1">Model provider warning</p>
+                {modelWarnings.map((w, i) => (
+                  <p key={i} className="text-xs text-amber-300/80">{w}</p>
+                ))}
+                <p className="text-xs text-amber-400/60 mt-1">
+                  Agents may fall back to a different model.{" "}
+                  <a href="/models" className="underline hover:text-amber-300">Configure keys</a>
+                </p>
+              </div>
+              <button onClick={() => setWarningDismissed(true)} className="text-amber-500 hover:text-amber-300 text-xs shrink-0">Dismiss</button>
+            </div>
+          </div>
+        )}
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">

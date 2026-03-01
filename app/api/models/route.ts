@@ -165,6 +165,17 @@ export async function POST(request: NextRequest) {
         // Register key with gateway's auth-profiles so internal agent runner finds it
         registerAuthProfile(envKey, value);
 
+        // Verify both stores were written
+        const envVerified = (() => {
+          try {
+            const check = readFileSync(envPath, "utf-8");
+            return check.includes(`${envKey}=`);
+          } catch { return false; }
+        })();
+        if (!envVerified) {
+          return NextResponse.json({ error: "Key saved to memory but failed to persist to .env file" }, { status: 500 });
+        }
+
         // Restart gateway only if this is a NEW provider (gateway needs to rebuild provider map)
         let restarted = false;
         if (!wasConfigured) {
@@ -204,6 +215,76 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: true });
       } catch (err: unknown) {
         return NextResponse.json({ error: err instanceof Error ? err.message : "Failed to remove key" }, { status: 500 });
+      }
+    }
+
+    case "testProviderKey": {
+      const providerId = (body.providerId as string || "").trim();
+      const apiKey = (body.apiKey as string || "").trim();
+
+      if (!providerId || !apiKey) {
+        return NextResponse.json({ error: "Provider ID and API key required" }, { status: 400 });
+      }
+
+      try {
+        if (providerId === "anthropic") {
+          const res = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {
+              "x-api-key": apiKey,
+              "anthropic-version": "2023-06-01",
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "claude-haiku-4-5-20251001",
+              max_tokens: 1,
+              messages: [{ role: "user", content: "test" }],
+            }),
+          });
+          return NextResponse.json({ valid: res.ok, status: res.status });
+        }
+
+        if (providerId === "openai") {
+          const res = await fetch("https://api.openai.com/v1/models", {
+            headers: { Authorization: `Bearer ${apiKey}` },
+          });
+          return NextResponse.json({ valid: res.ok, status: res.status });
+        }
+
+        if (providerId === "xai") {
+          const res = await fetch("https://api.x.ai/v1/models", {
+            headers: { Authorization: `Bearer ${apiKey}` },
+          });
+          return NextResponse.json({ valid: res.ok, status: res.status });
+        }
+
+        if (providerId === "google") {
+          const res = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`,
+          );
+          return NextResponse.json({ valid: res.ok, status: res.status });
+        }
+
+        if (providerId === "openrouter") {
+          const res = await fetch("https://openrouter.ai/api/v1/models", {
+            headers: { Authorization: `Bearer ${apiKey}` },
+          });
+          return NextResponse.json({ valid: res.ok, status: res.status });
+        }
+
+        if (providerId === "moonshot") {
+          const res = await fetch("https://api.moonshot.cn/v1/models", {
+            headers: { Authorization: `Bearer ${apiKey}` },
+          });
+          return NextResponse.json({ valid: res.ok, status: res.status });
+        }
+
+        return NextResponse.json({ valid: true, status: 200 });
+      } catch (err: unknown) {
+        return NextResponse.json({
+          valid: false,
+          error: err instanceof Error ? err.message : "Connection failed",
+        });
       }
     }
 
