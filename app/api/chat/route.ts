@@ -7,6 +7,7 @@ import {
   readdirSync,
   statSync,
   writeFileSync,
+  unlinkSync,
 } from "fs";
 import { join } from "path";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -204,7 +205,21 @@ export async function POST(request: NextRequest) {
       // Snapshot session line count BEFORE CLI starts
       const preBaseline = preSessionFile ? countFileLines(preSessionFile) : 0;
 
-      const args = ["agent", "--agent", "main", "--message", message];
+      // Check for session handoff (prior conversation saved during model switch)
+      let finalMessage = message;
+      const handoffPath = join(agentsRuntimeDir(), "main", "sessions", "handoff-main.md");
+      if (existsSync(handoffPath)) {
+        try {
+          const handoff = readFileSync(handoffPath, "utf-8").trim();
+          if (handoff) {
+            finalMessage = `${handoff}\n\n---\n\n**New message (answer this):**\n${message}`;
+          }
+          // Delete after reading so it's only injected once
+          try { unlinkSync(handoffPath); } catch { /* ok */ }
+        } catch { /* handoff read is best-effort */ }
+      }
+
+      const args = ["agent", "--agent", "main", "--message", finalMessage];
       if (sessionId) {
         args.push("--session-id", sessionId);
       }

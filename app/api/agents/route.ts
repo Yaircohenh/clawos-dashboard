@@ -108,12 +108,46 @@ export async function POST(request: NextRequest) {
 
         // Reset session when switching models to avoid cross-provider format issues
         // (e.g. Grok tool_use blocks rejected by Claude API)
+        // Save conversation content as handoff so the new model has context
         let sessionReset = false;
         if (prevModel !== model) {
           try {
             const sessDir = join(agentsRuntimeDir(), agentId, "sessions");
             const sessJsonPath = join(sessDir, "sessions.json");
             if (existsSync(sessJsonPath)) {
+              // Extract conversation from active session before archiving
+              try {
+                const sessMeta = JSON.parse(readFileSync(sessJsonPath, "utf-8"));
+                const sessionKey = `agent:${agentId}:main`;
+                const entry = sessMeta[sessionKey];
+                const sessionFile = entry?.sessionFile;
+                if (sessionFile && existsSync(sessionFile)) {
+                  const lines = readFileSync(sessionFile, "utf-8").trim().split("\n");
+                  const messages: string[] = [];
+                  for (const line of lines) {
+                    try {
+                      const e = JSON.parse(line);
+                      if (e.type === "message" && e.message?.role && e.message?.content) {
+                        const role = e.message.role === "user" ? "User" : "Assistant";
+                        const text = Array.isArray(e.message.content)
+                          ? e.message.content
+                              .filter((b: Record<string, unknown>) => b.type === "text")
+                              .map((b: Record<string, unknown>) => b.text)
+                              .join("\n")
+                          : String(e.message.content);
+                        if (text.trim()) messages.push(`**${role}:** ${text.trim()}`);
+                      }
+                    } catch { /* skip malformed lines */ }
+                  }
+                  if (messages.length > 0) {
+                    // Keep last 30 messages max to avoid huge handoffs
+                    const recent = messages.slice(-30);
+                    const handoff = `# Session Handoff\n\nModel switched from \`${prevModel}\` to \`${model}\`.\nBelow is the prior conversation for context. Review before responding.\n\n---\n\n${recent.join("\n\n")}\n`;
+                    writeFileSync(join(sessDir, `handoff-${agentId}.md`), handoff, "utf-8");
+                  }
+                }
+              } catch { /* handoff extraction is best-effort */ }
+
               // Archive the sessions.json — gateway will create a fresh one
               const backupName = `sessions.${Date.now()}.json`;
               renameSync(sessJsonPath, join(sessDir, backupName));

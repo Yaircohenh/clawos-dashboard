@@ -162,7 +162,7 @@ export default function AgentsPage() {
       const data = await res.json();
       setAgents((prev) => prev.map((a) => (a.id === agentId ? { ...a, model } : a)));
       if (data.sessionReset) {
-        toast.success(`Model updated to ${model}. Session reset — start a new chat.`);
+        toast.success(`Model updated to ${model}. Prior conversation saved — new model will have context.`);
       } else {
         toast.success(`Model updated to ${model}. Gateway restarting...`);
       }
