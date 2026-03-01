@@ -252,7 +252,7 @@ export async function POST(request: NextRequest) {
 
     if (keyId.startsWith("provider:google")) {
       try {
-        const key = process.env.GOOGLE_API_KEY || "";
+        const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
         const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`);
         return NextResponse.json({ success: true, valid: res.ok, status: res.status });
       } catch (err: unknown) {

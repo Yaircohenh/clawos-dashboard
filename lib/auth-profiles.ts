@@ -10,9 +10,8 @@ export const PROVIDER_ENV_MAP: Record<string, string> = {
   ANTHROPIC_API_KEY: "anthropic",
   OPENAI_API_KEY: "openai",
   XAI_API_KEY: "xai",
-  GOOGLE_API_KEY: "google",
+  GEMINI_API_KEY: "google",
   MOONSHOT_API_KEY: "moonshot",
-  STEP_API_KEY: "stepfun",
   OPENROUTER_API_KEY: "openrouter",
 };
 
